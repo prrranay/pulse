@@ -23,8 +23,13 @@ model User {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relationships
-  followers Follow[] @relation("following")
-  following Follow[] @relation("follower")
+  followers  Follow[]   @relation("following")
+  following  Follow[]   @relation("follower")
+  posts      Post[]
+  likes      Like[]
+  bookmarks  Bookmark[]
+  reposts    Repost[]
+  comments   Comment[]
 
   @@map("users")
 }
@@ -43,6 +48,95 @@ model Follow {
   @@index([followerId])
   @@index([followingId])
   @@map("follows")
+}
+
+model Post {
+  id        String   @id @default(uuid())
+  content   String
+  imageUrl  String?  @map("image_url")
+  authorId  String   @map("author_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  likes     Like[]
+  bookmarks Bookmark[]
+  reposts   Repost[]
+  comments  Comment[]
+
+  @@index([authorId])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  postId    String   @map("post_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
+  @@map("likes")
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  postId    String   @map("post_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
+  @@map("bookmarks")
+}
+
+model Repost {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  postId    String   @map("post_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
+  @@map("reposts")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  userId    String   @map("user_id")
+  postId    String   @map("post_id")
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("comment_replies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("comment_replies")
+
+  @@index([userId])
+  @@index([postId])
+  @@index([parentId])
+  @@map("comments")
 }
 
 enum Role {

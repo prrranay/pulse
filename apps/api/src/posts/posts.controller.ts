@@ -1,0 +1,126 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Headers,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { PostsService } from './posts.service';
+import { CreatePostDto, UpdatePostDto, FeedQueryDto } from './dto/posts.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/user.decorator';
+import { JwtService } from '@nestjs/jwt';
+
+@Controller('posts')
+export class PostsController {
+  constructor(
+    private readonly postsService: PostsService,
+    private readonly jwtService: JwtService,
+  ) {}
+
+  @Post()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.CREATED)
+  async create(@CurrentUser('id') userId: string, @Body() dto: CreatePostDto) {
+    return this.postsService.create(userId, dto);
+  }
+
+  @Get('feed')
+  @UseGuards(JwtAuthGuard)
+  async getFeed(
+    @CurrentUser('id') userId: string,
+    @Query() query: FeedQueryDto,
+  ) {
+    return this.postsService.getHomeFeed(userId, query);
+  }
+
+  @Get(':id')
+  async getById(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    let currentUserId: string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.split(' ')[1];
+        const payload: unknown = this.jwtService.decode(token);
+        if (payload && typeof payload === 'object') {
+          currentUserId = (payload as Record<string, any>).sub as
+            string | undefined;
+        }
+      } catch {
+        // Silently treat as anonymous
+      }
+    }
+
+    return this.postsService.getById(id, currentUserId);
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  async update(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdatePostDto,
+  ) {
+    return this.postsService.update(id, userId, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async delete(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.postsService.delete(id, userId);
+  }
+
+  @Post(':id/like')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async like(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.postsService.like(userId, id);
+  }
+
+  @Delete(':id/like')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async unlike(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.postsService.unlike(userId, id);
+  }
+
+  @Post(':id/bookmark')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async bookmark(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.postsService.bookmark(userId, id);
+  }
+
+  @Delete(':id/bookmark')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async unbookmark(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.postsService.unbookmark(userId, id);
+  }
+
+  @Post(':id/repost')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async repost(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.postsService.repost(userId, id);
+  }
+
+  @Delete(':id/repost')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async unrepost(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.postsService.unrepost(userId, id);
+  }
+}
+export type { User } from '@prisma/client';
+export type { CreatePostDto };

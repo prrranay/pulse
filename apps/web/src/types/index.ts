@@ -34,3 +34,40 @@ export interface User {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface AuthorSummary {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+export interface PostResponse {
+  id: string;
+  content: string;
+  imageUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author: AuthorSummary;
+  likesCount: number;
+  commentsCount: number;
+  repostsCount: number;
+  isLiked: boolean;
+  isBookmarked: boolean;
+  isReposted: boolean;
+}
+
+export interface ReplyResponse {
+  id: string;
+  content: string;
+  createdAt: string;
+  author: AuthorSummary;
+}
+
+export interface CommentResponse {
+  id: string;
+  content: string;
+  createdAt: string;
+  author: AuthorSummary;
+  replies: ReplyResponse[];
+}
