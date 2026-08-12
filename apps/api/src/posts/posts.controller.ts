@@ -123,6 +123,64 @@ export class PostsController {
   async unrepost(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.postsService.unrepost(userId, id);
   }
+
+  @Get('user/:username')
+  async getUserPosts(
+    @Param('username') username: string,
+    @Query() query: FeedQueryDto,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    let currentUserId: string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.split(' ')[1];
+        const payload: unknown = this.jwtService.decode(token);
+        if (payload && typeof payload === 'object') {
+          currentUserId = (payload as Record<string, any>).sub as
+            string | undefined;
+        }
+      } catch {
+        // Silently treat as anonymous
+      }
+    }
+
+    return this.postsService.getUserPosts(username, currentUserId, query);
+  }
+
+  @Get('user/:username/reposts')
+  async getUserReposts(
+    @Param('username') username: string,
+    @Query() query: FeedQueryDto,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    let currentUserId: string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.split(' ')[1];
+        const payload: unknown = this.jwtService.decode(token);
+        if (payload && typeof payload === 'object') {
+          currentUserId = (payload as Record<string, any>).sub as
+            string | undefined;
+        }
+      } catch {
+        // Silently treat as anonymous
+      }
+    }
+
+    return this.postsService.getUserReposts(username, currentUserId, query);
+  }
+
+  @Get('user/:username/bookmarks')
+  @UseGuards(JwtAuthGuard)
+  async getUserBookmarks(
+    @Param('username') username: string,
+    @Query() query: FeedQueryDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.postsService.getUserBookmarks(username, userId, query);
+  }
 }
 export type { User } from '@prisma/client';
 export type { CreatePostDto };

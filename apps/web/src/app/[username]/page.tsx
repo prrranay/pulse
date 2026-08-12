@@ -3,11 +3,13 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/auth-context';
 import { apiClient } from '../../lib/api-client';
-import { ApiResponse } from '../../types';
+import { ApiResponse, PostResponse } from '../../types';
+import PostCard from '../../components/post-card';
+import { PostSkeleton } from '../../components/skeleton-loader';
 import {
   Settings,
   Calendar,
@@ -104,7 +106,123 @@ export default function ProfilePage() {
     },
   });
 
+  interface FeedResponse {
+    items: PostResponse[];
+    nextCursor: string | null;
+  }
+
+  const [profileTab, setProfileTab] = useState<'posts' | 'reposts' | 'saved'>('posts');
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
   const isOwnProfile = currentUser && profile && currentUser.id === profile.id;
+
+  // 6. Fetch Infinite Posts
+  const {
+    data: postsData,
+    isLoading: postsLoading,
+    fetchNextPage: fetchNextPosts,
+    hasNextPage: hasNextPosts,
+    isFetchingNextPage: isFetchingNextPosts,
+    error: postsError,
+  } = useInfiniteQuery<ApiResponse<FeedResponse>>({
+    queryKey: ['user-posts', username],
+    queryFn: ({ pageParam }) =>
+      apiClient.get<ApiResponse<FeedResponse>>(
+        `/posts/user/${username}?limit=10${pageParam ? `&cursor=${pageParam}` : ''}`
+      ),
+    initialPageParam: null,
+    getNextPageParam: (lastPage) => lastPage.data.nextCursor,
+    enabled: !!username && activeTab === null && profileTab === 'posts',
+  });
+
+  // 7. Fetch Infinite Reposts
+  const {
+    data: repostsData,
+    isLoading: repostsLoading,
+    fetchNextPage: fetchNextReposts,
+    hasNextPage: hasNextReposts,
+    isFetchingNextPage: isFetchingNextReposts,
+    error: repostsError,
+  } = useInfiniteQuery<ApiResponse<FeedResponse>>({
+    queryKey: ['user-reposts', username],
+    queryFn: ({ pageParam }) =>
+      apiClient.get<ApiResponse<FeedResponse>>(
+        `/posts/user/${username}/reposts?limit=10${pageParam ? `&cursor=${pageParam}` : ''}`
+      ),
+    initialPageParam: null,
+    getNextPageParam: (lastPage) => lastPage.data.nextCursor,
+    enabled: !!username && activeTab === null && profileTab === 'reposts',
+  });
+
+  // 7.5 Fetch Infinite Saved Posts (Private - only own profile)
+  const {
+    data: savedData,
+    isLoading: savedLoading,
+    fetchNextPage: fetchNextSaved,
+    hasNextPage: hasNextSaved,
+    isFetchingNextPage: isFetchingNextSaved,
+    error: savedError,
+  } = useInfiniteQuery<ApiResponse<FeedResponse>>({
+    queryKey: ['user-bookmarks', username],
+    queryFn: ({ pageParam }) =>
+      apiClient.get<ApiResponse<FeedResponse>>(
+        `/posts/user/${username}/bookmarks?limit=10${pageParam ? `&cursor=${pageParam}` : ''}`
+      ),
+    initialPageParam: null,
+    getNextPageParam: (lastPage) => lastPage.data.nextCursor,
+    enabled: !!username && activeTab === null && profileTab === 'saved' && !!isOwnProfile,
+  });
+
+  const posts = postsData?.pages.flatMap((page) => page.data.items) ?? [];
+  const reposts = repostsData?.pages.flatMap((page) => page.data.items) ?? [];
+  const savedPosts = savedData?.pages.flatMap((page) => page.data.items) ?? [];
+
+  // 8. Setup intersection observer for infinite scroll
+  useEffect(() => {
+    const hasNext =
+      profileTab === 'posts'
+        ? hasNextPosts
+        : profileTab === 'reposts'
+        ? hasNextReposts
+        : hasNextSaved;
+    const isFetching =
+      profileTab === 'posts'
+        ? isFetchingNextPosts
+        : profileTab === 'reposts'
+        ? isFetchingNextReposts
+        : isFetchingNextSaved;
+    const fetchNext =
+      profileTab === 'posts'
+        ? fetchNextPosts
+        : profileTab === 'reposts'
+        ? fetchNextReposts
+        : fetchNextSaved;
+
+    if (!hasNext || isFetching || !sentinelRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fetchNext();
+        }
+      },
+      { threshold: 0.8 },
+    );
+
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [
+    profileTab,
+    hasNextPosts,
+    hasNextReposts,
+    hasNextSaved,
+    isFetchingNextPosts,
+    isFetchingNextReposts,
+    isFetchingNextSaved,
+    fetchNextPosts,
+    fetchNextReposts,
+    fetchNextSaved,
+  ]);
 
   const handleFollowAction = () => {
     if (!currentUser) {
@@ -376,6 +494,120 @@ export default function ProfilePage() {
                   </div>
                 ))}
             </div>
+          </div>
+        )}
+
+        {/* Posts, Reposts & Saved Section */}
+        {!activeTab && (
+          <div className="mt-6">
+            {/* Tabs Selector */}
+            <div className="flex border-b border-slate-900 mb-4">
+              <button
+                onClick={() => setProfileTab('posts')}
+                className={`flex-1 py-3 text-center text-xs font-semibold uppercase tracking-wider transition-all border-b-2 ${
+                  profileTab === 'posts'
+                    ? 'border-indigo-500 text-indigo-400 font-bold'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Posts
+              </button>
+              <button
+                onClick={() => setProfileTab('reposts')}
+                className={`flex-1 py-3 text-center text-xs font-semibold uppercase tracking-wider transition-all border-b-2 ${
+                  profileTab === 'reposts'
+                    ? 'border-indigo-500 text-indigo-400 font-bold'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Reposts
+              </button>
+              {isOwnProfile && (
+                <button
+                  onClick={() => setProfileTab('saved')}
+                  className={`flex-1 py-3 text-center text-xs font-semibold uppercase tracking-wider transition-all border-b-2 ${
+                    profileTab === 'saved'
+                      ? 'border-indigo-500 text-indigo-400 font-bold'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Saved
+                </button>
+              )}
+            </div>
+
+            {/* Error States */}
+            {profileTab === 'posts' && postsError && (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
+                <p className="text-xs text-red-400">Failed to load posts.</p>
+              </div>
+            )}
+            {profileTab === 'reposts' && repostsError && (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
+                <p className="text-xs text-red-400">Failed to load reposts.</p>
+              </div>
+            )}
+            {profileTab === 'saved' && savedError && (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
+                <p className="text-xs text-red-400">Failed to load saved posts.</p>
+              </div>
+            )}
+
+            {/* Empty States */}
+            {profileTab === 'posts' && !postsLoading && posts.length === 0 && (
+              <div className="rounded-xl border border-slate-900 bg-slate-900/10 p-12 text-center text-slate-500">
+                <p className="text-sm font-semibold">No posts yet.</p>
+                <p className="mt-1 text-xs text-slate-600">When they share updates, they will show up here.</p>
+              </div>
+            )}
+            {profileTab === 'reposts' && !repostsLoading && reposts.length === 0 && (
+              <div className="rounded-xl border border-slate-900 bg-slate-900/10 p-12 text-center text-slate-500">
+                <p className="text-sm font-semibold">No reposts yet.</p>
+                <p className="mt-1 text-xs text-slate-600">When they repost updates, they will show up here.</p>
+              </div>
+            )}
+            {profileTab === 'saved' && !savedLoading && savedPosts.length === 0 && (
+              <div className="rounded-xl border border-slate-900 bg-slate-900/10 p-12 text-center text-slate-500">
+                <p className="text-sm font-semibold">No saved posts yet.</p>
+                <p className="mt-1 text-xs text-slate-600">Bookmark posts to save them for later.</p>
+              </div>
+            )}
+
+            {/* Posts / Reposts / Saved Feed List */}
+            <div className="space-y-4">
+              {profileTab === 'posts' &&
+                posts.map((post) => <PostCard key={post.id} post={post} />)}
+
+              {profileTab === 'reposts' &&
+                reposts.map((post) => (
+                  <div key={post.id} className="relative">
+                    <div className="absolute -top-3 left-8 z-10 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 bg-slate-950 px-2 py-0.5 rounded-full border border-slate-900">
+                      <span>Reposted</span>
+                    </div>
+                    <PostCard post={post} />
+                  </div>
+                ))}
+
+              {profileTab === 'saved' &&
+                savedPosts.map((post) => <PostCard key={post.id} post={post} />)}
+            </div>
+
+            {/* Loading Skeletons */}
+            {((profileTab === 'posts' && (postsLoading || isFetchingNextPosts)) ||
+              (profileTab === 'reposts' && (repostsLoading || isFetchingNextReposts)) ||
+              (profileTab === 'saved' && (savedLoading || isFetchingNextSaved))) && (
+              <div className="space-y-4 mt-4">
+                <PostSkeleton />
+                <PostSkeleton />
+              </div>
+            )}
+
+            {/* Infinite Scroll Sentinel */}
+            {((profileTab === 'posts' && hasNextPosts) ||
+              (profileTab === 'reposts' && hasNextReposts) ||
+              (profileTab === 'saved' && hasNextSaved)) && (
+              <div ref={sentinelRef} className="h-10" />
+            )}
           </div>
         )}
       </div>

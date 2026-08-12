@@ -21,6 +21,17 @@ export default function PostCard({ post }: { post: PostResponse }) {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
 
+  const invalidateAllPostFeeds = () => {
+    queryClient.invalidateQueries({ queryKey: ['feed'] });
+    queryClient.invalidateQueries({ queryKey: ['post', post.id] });
+    queryClient.invalidateQueries({ queryKey: ['user-posts'] });
+    queryClient.invalidateQueries({ queryKey: ['user-reposts'] });
+    queryClient.invalidateQueries({ queryKey: ['user-bookmarks'] });
+    queryClient.invalidateQueries({ queryKey: ['community-posts'] });
+    queryClient.invalidateQueries({ queryKey: ['explore'] });
+    queryClient.invalidateQueries({ queryKey: ['search'] });
+  };
+
   // 1. Like mutation
   const likeMutation = useMutation({
     mutationFn: () =>
@@ -28,8 +39,7 @@ export default function PostCard({ post }: { post: PostResponse }) {
         ? apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/like`)
         : apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/like`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-      queryClient.invalidateQueries({ queryKey: ['post', post.id] });
+      invalidateAllPostFeeds();
     },
   });
 
@@ -40,8 +50,7 @@ export default function PostCard({ post }: { post: PostResponse }) {
         ? apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/bookmark`)
         : apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/bookmark`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-      queryClient.invalidateQueries({ queryKey: ['post', post.id] });
+      invalidateAllPostFeeds();
     },
   });
 
@@ -52,8 +61,7 @@ export default function PostCard({ post }: { post: PostResponse }) {
         ? apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/repost`)
         : apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/repost`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-      queryClient.invalidateQueries({ queryKey: ['post', post.id] });
+      invalidateAllPostFeeds();
     },
   });
 
@@ -61,7 +69,7 @@ export default function PostCard({ post }: { post: PostResponse }) {
   const deletePostMutation = useMutation({
     mutationFn: () => apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
+      invalidateAllPostFeeds();
     },
   });
 

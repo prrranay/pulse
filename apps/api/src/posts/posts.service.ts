@@ -300,6 +300,22 @@ export class PostsService {
     return result;
   }
 
+  private async invalidateUserFeedCache(userId: string): Promise<void> {
+    try {
+      const keys = await this.redisService
+        .getClient()
+        .keys(`feed:user_${userId}:*`);
+      if (keys.length > 0) {
+        await this.redisService.getClient().del(...keys);
+      }
+    } catch (err) {
+      console.error(
+        `Failed to invalidate feed cache keys for user ${userId}:`,
+        err,
+      );
+    }
+  }
+
   async like(userId: string, postId: string): Promise<{ message: string }> {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post) {
@@ -310,6 +326,9 @@ export class PostsService {
       await this.prisma.like.create({
         data: { userId, postId },
       });
+      // Invalidate cache for the user performing the action
+      await this.invalidateUserFeedCache(userId);
+
       // Trigger notification
       await this.notificationsService.createNotification(
         post.authorId,
@@ -340,6 +359,8 @@ export class PostsService {
     await this.prisma.like.delete({
       where: { id: like.id },
     });
+    // Invalidate cache for the user performing the action
+    await this.invalidateUserFeedCache(userId);
 
     return { message: 'Post unliked successfully' };
   }
@@ -354,6 +375,8 @@ export class PostsService {
       await this.prisma.bookmark.create({
         data: { userId, postId },
       });
+      // Invalidate cache for the user performing the action
+      await this.invalidateUserFeedCache(userId);
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err?.code === 'P2002') {
@@ -380,6 +403,8 @@ export class PostsService {
     await this.prisma.bookmark.delete({
       where: { id: bookmark.id },
     });
+    // Invalidate cache for the user performing the action
+    await this.invalidateUserFeedCache(userId);
 
     return { message: 'Bookmark removed successfully' };
   }
@@ -394,6 +419,9 @@ export class PostsService {
       await this.prisma.repost.create({
         data: { userId, postId },
       });
+      // Invalidate cache for the user performing the action
+      await this.invalidateUserFeedCache(userId);
+
       // Trigger notification
       await this.notificationsService.createNotification(
         post.authorId,
@@ -424,10 +452,336 @@ export class PostsService {
     await this.prisma.repost.delete({
       where: { id: repost.id },
     });
+    // Invalidate cache for the user performing the action
+    await this.invalidateUserFeedCache(userId);
 
     return { message: 'Repost removed successfully' };
   }
+
+  async getUserPosts(
+    username: string,
+    currentUserId?: string,
+    query?: FeedQueryDto,
+  ): Promise<PaginatedFeedResponse> {
+    const limit = query?.limit ?? 10;
+    const cursor = query?.cursor;
+
+    const user = await this.prisma.user.findUnique({
+      where: { username },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User @${username} not found`);
+    }
+
+    const posts = await this.prisma.post.findMany({
+      where: {
+        authorId: user.id,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: limit + 1,
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : undefined,
+      include: {
+        author: true,
+        _count: {
+          select: {
+            likes: true,
+            comments: true,
+            reposts: true,
+          },
+        },
+      },
+    });
+
+    let nextCursor: string | null = null;
+    const items = [...posts];
+
+    if (items.length > limit) {
+      const lastItem = items.pop();
+      nextCursor = lastItem ? lastItem.id : null;
+    }
+
+    const enrichedItems = await Promise.all(
+      items.map(async (post) => {
+        let isLiked = false;
+        let isBookmarked = false;
+        let isReposted = false;
+
+        if (currentUserId) {
+          const [like, bookmark, repost] = await Promise.all([
+            this.prisma.like.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+            this.prisma.bookmark.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+            this.prisma.repost.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+          ]);
+          isLiked = !!like;
+          isBookmarked = !!bookmark;
+          isReposted = !!repost;
+        }
+
+        return {
+          id: post.id,
+          content: post.content,
+          imageUrl: post.imageUrl,
+          createdAt: post.createdAt,
+          updatedAt: post.updatedAt,
+          author: {
+            id: post.author.id,
+            username: post.author.username,
+            displayName: post.author.displayName,
+            avatarUrl: post.author.avatarUrl,
+          },
+          likesCount: post._count.likes,
+          commentsCount: post._count.comments,
+          repostsCount: post._count.reposts,
+          isLiked,
+          isBookmarked,
+          isReposted,
+        };
+      }),
+    );
+
+    return {
+      items: enrichedItems,
+      nextCursor,
+    };
+  }
+
+  async getUserReposts(
+    username: string,
+    currentUserId?: string,
+    query?: FeedQueryDto,
+  ): Promise<PaginatedFeedResponse> {
+    const limit = query?.limit ?? 10;
+    const cursor = query?.cursor;
+
+    const user = await this.prisma.user.findUnique({
+      where: { username },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User @${username} not found`);
+    }
+
+    const reposts = await this.prisma.repost.findMany({
+      where: {
+        userId: user.id,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: limit + 1,
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : undefined,
+      include: {
+        post: {
+          include: {
+            author: true,
+            _count: {
+              select: {
+                likes: true,
+                comments: true,
+                reposts: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let nextCursor: string | null = null;
+    const items = [...reposts];
+
+    if (items.length > limit) {
+      const lastItem = items.pop();
+      nextCursor = lastItem ? lastItem.id : null;
+    }
+
+    const enrichedItems = await Promise.all(
+      items.map(async (repost) => {
+        const post = repost.post;
+        let isLiked = false;
+        let isBookmarked = false;
+        let isReposted = false;
+
+        if (currentUserId) {
+          const [like, bookmark, rep] = await Promise.all([
+            this.prisma.like.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+            this.prisma.bookmark.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+            this.prisma.repost.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+          ]);
+          isLiked = !!like;
+          isBookmarked = !!bookmark;
+          isReposted = !!rep;
+        }
+
+        return {
+          id: post.id,
+          content: post.content,
+          imageUrl: post.imageUrl,
+          createdAt: post.createdAt,
+          updatedAt: post.updatedAt,
+          author: {
+            id: post.author.id,
+            username: post.author.username,
+            displayName: post.author.displayName,
+            avatarUrl: post.author.avatarUrl,
+          },
+          likesCount: post._count.likes,
+          commentsCount: post._count.comments,
+          repostsCount: post._count.reposts,
+          isLiked,
+          isBookmarked,
+          isReposted,
+        };
+      }),
+    );
+
+    return {
+      items: enrichedItems,
+      nextCursor,
+    };
+  }
+
+  async getUserBookmarks(
+    username: string,
+    currentUserId?: string,
+    query?: FeedQueryDto,
+  ): Promise<PaginatedFeedResponse> {
+    const limit = query?.limit ?? 10;
+    const cursor = query?.cursor;
+
+    const user = await this.prisma.user.findUnique({
+      where: { username },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User @${username} not found`);
+    }
+
+    if (!currentUserId || user.id !== currentUserId) {
+      throw new ForbiddenException('You can only view your own saved posts');
+    }
+
+    const bookmarks = await this.prisma.bookmark.findMany({
+      where: {
+        userId: user.id,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: limit + 1,
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : undefined,
+      include: {
+        post: {
+          include: {
+            author: true,
+            _count: {
+              select: {
+                likes: true,
+                comments: true,
+                reposts: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let nextCursor: string | null = null;
+    const items = [...bookmarks];
+
+    if (items.length > limit) {
+      const lastItem = items.pop();
+      nextCursor = lastItem ? lastItem.id : null;
+    }
+
+    const enrichedItems = await Promise.all(
+      items.map(async (bookmark) => {
+        const post = bookmark.post;
+        let isLiked = false;
+        let isBookmarked = false;
+        let isReposted = false;
+
+        if (currentUserId) {
+          const [like, book, rep] = await Promise.all([
+            this.prisma.like.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+            this.prisma.bookmark.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+            this.prisma.repost.findUnique({
+              where: {
+                userId_postId: { userId: currentUserId, postId: post.id },
+              },
+            }),
+          ]);
+          isLiked = !!like;
+          isBookmarked = !!book;
+          isReposted = !!rep;
+        }
+
+        return {
+          id: post.id,
+          content: post.content,
+          imageUrl: post.imageUrl,
+          createdAt: post.createdAt,
+          updatedAt: post.updatedAt,
+          author: {
+            id: post.author.id,
+            username: post.author.username,
+            displayName: post.author.displayName,
+            avatarUrl: post.author.avatarUrl,
+          },
+          likesCount: post._count.likes,
+          commentsCount: post._count.comments,
+          repostsCount: post._count.reposts,
+          isLiked,
+          isBookmarked,
+          isReposted,
+        };
+      }),
+    );
+
+    return {
+      items: enrichedItems,
+      nextCursor,
+    };
+  }
 }
+
 export type { User };
 export type { Post };
 export type { CreatePostDto };

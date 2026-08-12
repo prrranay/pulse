@@ -3,10 +3,12 @@ import { BullModule } from '@nestjs/bull';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EmailProcessor } from './processors/email.processor';
 import { ModerationProcessor } from './processors/moderation.processor';
+import { AiModule } from '../ai/ai.module';
 
 @Global()
 @Module({
   imports: [
+    AiModule,
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {

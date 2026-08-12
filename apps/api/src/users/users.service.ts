@@ -42,9 +42,10 @@ export class UsersService {
     }
 
     // Get follower/following counts
-    const [followersCount, followingCount] = await Promise.all([
+    const [followersCount, followingCount, postCount] = await Promise.all([
       this.prisma.follow.count({ where: { followingId: user.id } }),
       this.prisma.follow.count({ where: { followerId: user.id } }),
+      this.prisma.post.count({ where: { authorId: user.id } }),
     ]);
 
     let isFollowing = false;
@@ -69,7 +70,7 @@ export class UsersService {
       createdAt: user.createdAt,
       followersCount,
       followingCount,
-      postCount: 0, // Placeholder for posts
+      postCount,
       isFollowing,
     };
   }
