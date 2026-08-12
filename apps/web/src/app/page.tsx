@@ -9,7 +9,9 @@ import PostComposer from '../components/post-composer';
 import PostCard from '../components/post-card';
 import { PostSkeleton } from '../components/skeleton-loader';
 import NotificationBell from '../components/notification-bell';
+import ChatBadge from '../components/chat-badge';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Flame, LogIn, UserPlus, Sparkles } from 'lucide-react';
 
 interface FeedResponse {
@@ -19,6 +21,7 @@ interface FeedResponse {
 
 export default function HomePage() {
   const { user, isLoading: authLoading, logout } = useAuth();
+  const router = useRouter();
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   // 1. Fetch Infinite Feed
@@ -120,6 +123,7 @@ export default function HomePage() {
           </Link>
 
           <div className="flex items-center gap-4">
+            <ChatBadge />
             <NotificationBell />
             <Link
               href={`/${user.username}`}
@@ -227,24 +231,33 @@ export default function HomePage() {
               </h3>
 
               <div className="space-y-3 text-xs">
-                <div className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5">
-                  <span className="font-bold text-indigo-400 hover:underline cursor-pointer">
+                <div
+                  onClick={() => router.push('/explore?q=nextjs15')}
+                  className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5 hover:border-indigo-500/30 transition-all cursor-pointer"
+                >
+                  <span className="font-bold text-indigo-400 hover:underline">
                     #nextjs15
                   </span>
                   <p className="mt-0.5 text-[10px] text-slate-500">
                     84 developers posting
                   </p>
                 </div>
-                <div className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5">
-                  <span className="font-bold text-indigo-400 hover:underline cursor-pointer">
+                <div
+                  onClick={() => router.push('/explore?q=typescript')}
+                  className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5 hover:border-indigo-500/30 transition-all cursor-pointer"
+                >
+                  <span className="font-bold text-indigo-400 hover:underline">
                     #typescript
                   </span>
                   <p className="mt-0.5 text-[10px] text-slate-500">
                     142 developers posting
                   </p>
                 </div>
-                <div className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5">
-                  <span className="font-bold text-indigo-400 hover:underline cursor-pointer">
+                <div
+                  onClick={() => router.push('/explore?q=prisma')}
+                  className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5 hover:border-indigo-500/30 transition-all cursor-pointer"
+                >
+                  <span className="font-bold text-indigo-400 hover:underline">
                     #prisma
                   </span>
                   <p className="mt-0.5 text-[10px] text-slate-500">

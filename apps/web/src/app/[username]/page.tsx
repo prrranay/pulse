@@ -9,6 +9,7 @@ import { useAuth } from '../../hooks/auth-context';
 import { apiClient } from '../../lib/api-client';
 import { ApiResponse, PostResponse } from '../../types';
 import PostCard from '../../components/post-card';
+import ChatBadge from '../../components/chat-badge';
 import { PostSkeleton } from '../../components/skeleton-loader';
 import {
   Settings,
@@ -16,6 +17,7 @@ import {
   UserCheck,
   UserPlus,
   ArrowLeft,
+  MessageCircle,
 } from 'lucide-react';
 
 interface ProfileData {
@@ -103,6 +105,17 @@ export default function ProfilePage() {
         queryClient.invalidateQueries({ queryKey: ['followers', profile.id] });
         queryClient.invalidateQueries({ queryKey: ['following', profile.id] });
       }
+    },
+  });
+
+  // 5.5 Start Chat Mutation
+  const startChatMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post<ApiResponse<{ id: string }>>('/chat/conversations', {
+        targetUsername: username,
+      }),
+    onSuccess: (res) => {
+      router.push(`/chat?id=${res.data.id}`);
     },
   });
 
@@ -284,14 +297,19 @@ export default function ProfilePage() {
             <p className="text-xs text-slate-500">{profile.postCount} posts</p>
           </div>
         </div>
-        {isOwnProfile && (
-          <button
-            onClick={() => router.push('/settings/profile')}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-          >
-            <Settings className="h-5 w-5" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {currentUser && (
+            <ChatBadge />
+          )}
+          {isOwnProfile && (
+            <button
+              onClick={() => router.push('/settings')}
+              className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
+            >
+              <Settings className="h-5 w-5" />
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Decorative Banner Background */}
@@ -324,25 +342,34 @@ export default function ProfilePage() {
               Edit Profile
             </button>
           ) : (
-            <button
-              onClick={handleFollowAction}
-              disabled={followMutation.isPending || unfollowMutation.isPending}
-              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-                profile.isFollowing
-                  ? 'border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
-              }`}
-            >
-              {profile.isFollowing ? (
-                <>
-                  <UserCheck className="h-3.5 w-3.5" /> Following
-                </>
-              ) : (
-                <>
-                  <UserPlus className="h-3.5 w-3.5" /> Follow
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => startChatMutation.mutate()}
+                disabled={startChatMutation.isPending}
+                className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/40 hover:bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-200 transition-all disabled:opacity-50"
+              >
+                <MessageCircle className="h-3.5 w-3.5" /> Message
+              </button>
+              <button
+                onClick={handleFollowAction}
+                disabled={followMutation.isPending || unfollowMutation.isPending}
+                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
+                  profile.isFollowing
+                    ? 'border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                }`}
+              >
+                {profile.isFollowing ? (
+                  <>
+                    <UserCheck className="h-3.5 w-3.5" /> Following
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-3.5 w-3.5" /> Follow
+                  </>
+                )}
+              </button>
+            </div>
           )}
         </div>
 

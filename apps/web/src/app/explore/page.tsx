@@ -10,8 +10,9 @@ import {
   SearchResultsResponse,
 } from '../../types';
 import PostCard from '../../components/post-card';
+import ChatBadge from '../../components/chat-badge';
 import { PostSkeleton } from '../../components/skeleton-loader';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
   Users,
@@ -26,10 +27,11 @@ import {
 
 export default function ExplorePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(searchParams?.get('q') || '');
   const [activeTab, setActiveTab] = useState<'trending' | 'recent'>('trending');
   const [searchTab, setSearchTab] = useState<'posts' | 'users' | 'communities'>('posts');
 
@@ -117,12 +119,15 @@ export default function ExplorePage() {
           </form>
 
           {user && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-1 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-indigo-500 shadow-md"
-            >
-              <Plus className="h-3.5 w-3.5" /> Community
-            </button>
+            <div className="flex items-center gap-3">
+              <ChatBadge />
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-1 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-indigo-500 shadow-md shrink-0"
+              >
+                <Plus className="h-3.5 w-3.5" /> Community
+              </button>
+            </div>
           )}
         </div>
       </header>

@@ -27,6 +27,20 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                const theme = localStorage.getItem('pulse_theme');
+                if (theme) {
+                  document.documentElement.setAttribute('data-theme', theme);
+                }
+              } catch (e) {}
+            `,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
         <QueryProvider>
           <AuthProvider>

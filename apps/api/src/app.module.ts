@@ -23,6 +23,7 @@ import { CommunitiesModule } from './communities/communities.module';
 import { DiscoveryModule } from './discovery/discovery.module';
 import { AiModule } from './ai/ai.module';
 import { AdminModule } from './admin/admin.module';
+import { ChatModule } from './chat/chat.module';
 import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
 
 @Module({
@@ -63,6 +64,7 @@ import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
     DiscoveryModule,
     AiModule,
     AdminModule,
+    ChatModule,
   ],
   providers: [
     {
