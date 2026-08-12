@@ -55,6 +55,7 @@ export class PostsService {
         content: dto.content,
         imageUrl: dto.imageUrl,
         authorId,
+        communityId: dto.communityId,
       },
     });
 

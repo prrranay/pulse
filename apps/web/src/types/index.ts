@@ -71,3 +71,97 @@ export interface CommentResponse {
   author: AuthorSummary;
   replies: ReplyResponse[];
 }
+
+export interface SearchResultsResponse {
+  users: Array<{
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  }>;
+  posts: PostResponse[];
+  communities: Array<{
+    id: string;
+    name: string;
+    description: string;
+  }>;
+}
+
+export interface ExploreDataResponse {
+  trendingPosts: PostResponse[];
+  suggestedUsers: Array<{
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  }>;
+  popularCommunities: Array<{
+    id: string;
+    name: string;
+    description: string;
+    memberCount: number;
+  }>;
+  recentPosts: PostResponse[];
+}
+
+export interface CommunityDetailsResponse {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  ownerId: string;
+  memberCount: number;
+  isMember: boolean;
+  role: 'MEMBER' | 'MODERATOR' | 'OWNER' | null;
+}
+
+export interface AdminMetricsResponse {
+  totalUsers: number;
+  activeUsers: number;
+  totalPosts: number;
+  totalComments: number;
+  totalCommunities: number;
+  totalMessages: number;
+  flaggedPosts: number;
+}
+
+export interface AdminUserListItem {
+  id: string;
+  username: string;
+  displayName: string | null;
+  email: string;
+  role: 'USER' | 'ADMIN' | 'MODERATOR';
+  isSuspended: boolean;
+  createdAt: string;
+  _count: {
+    posts: number;
+    comments: number;
+  };
+}
+
+export interface FlaggedContentItem {
+  id: string;
+  type: 'POST' | 'COMMENT';
+  content: string;
+  moderationStatus: 'PENDING' | 'APPROVED' | 'FLAGGED' | 'REJECTED';
+  createdAt: string;
+  author: {
+    username: string;
+    displayName: string | null;
+  };
+}
+
+export interface AdminFlaggedContentResponse {
+  posts: FlaggedContentItem[];
+  comments: FlaggedContentItem[];
+}
+
+export interface AnalyticsDataPoint {
+  date: string;
+  count: number;
+}
+
+export interface AnalyticsResponse {
+  userGrowth: AnalyticsDataPoint[];
+  postsPerDay: AnalyticsDataPoint[];
+}

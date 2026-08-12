@@ -10,28 +10,31 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(uuid())
-  email         String         @unique
-  username      String         @unique
-  displayName   String?        @map("display_name")
+  id            String            @id @default(uuid())
+  email         String            @unique
+  username      String            @unique
+  displayName   String?           @map("display_name")
   bio           String?
-  avatarUrl     String?        @map("avatar_url")
+  avatarUrl     String?           @map("avatar_url")
   password      String
-  isVerified    Boolean        @default(false) @map("is_verified")
-  role          Role           @default(USER)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
+  isVerified    Boolean           @default(false) @map("is_verified")
+  role          Role              @default(USER)
+  isSuspended   Boolean           @default(false) @map("is_suspended")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
 
   // Relationships
-  followers     Follow[]       @relation("following")
-  following     Follow[]       @relation("follower")
+  followers     Follow[]          @relation("following")
+  following     Follow[]          @relation("follower")
   posts         Post[]
   likes         Like[]
   bookmarks     Bookmark[]
   reposts       Repost[]
   comments      Comment[]
-  notifications Notification[] @relation("recipient")
-  actions       Notification[] @relation("actor")
+  notifications Notification[]    @relation("recipient")
+  actions       Notification[]    @relation("actor")
+  communities   Community[]       @relation("communityOwner")
+  memberships   CommunityMember[]
 
   @@map("users")
 }
@@ -53,15 +56,18 @@ model Follow {
 }
 
 model Post {
-  id        String   @id @default(uuid())
-  content   String
-  imageUrl  String?  @map("image_url")
-  authorId  String   @map("author_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id               String           @id @default(uuid())
+  content          String
+  imageUrl         String?          @map("image_url")
+  authorId         String           @map("author_id")
+  communityId      String?          @map("community_id")
+  moderationStatus ModerationStatus @default(PENDING) @map("moderation_status")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
   // Relationships
   author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  community     Community?     @relation(fields: [communityId], references: [id], onDelete: Cascade)
   likes         Like[]
   bookmarks     Bookmark[]
   reposts       Repost[]
@@ -69,6 +75,7 @@ model Post {
   notifications Notification[]
 
   @@index([authorId])
+  @@index([communityId])
   @@index([createdAt])
   @@map("posts")
 }
@@ -122,13 +129,14 @@ model Repost {
 }
 
 model Comment {
-  id        String   @id @default(uuid())
-  content   String
-  userId    String   @map("user_id")
-  postId    String   @map("post_id")
-  parentId  String?  @map("parent_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id               String           @id @default(uuid())
+  content          String
+  userId           String           @map("user_id")
+  postId           String           @map("post_id")
+  parentId         String?          @map("parent_id")
+  moderationStatus ModerationStatus @default(PENDING) @map("moderation_status")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
   // Relationships
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -165,6 +173,40 @@ model Notification {
   @@map("notifications")
 }
 
+model Community {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String
+  ownerId     String   @map("owner_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  owner   User              @relation("communityOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members CommunityMember[]
+  posts   Post[]
+
+  @@index([ownerId])
+  @@map("communities")
+}
+
+model CommunityMember {
+  id          String        @id @default(uuid())
+  communityId String        @map("community_id")
+  userId      String        @map("user_id")
+  role        CommunityRole @default(MEMBER)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  // Relationships
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+  @@index([communityId])
+  @@index([userId])
+  @@map("community_members")
+}
+
 enum Role {
   USER
   ADMIN
@@ -177,4 +219,17 @@ enum NotificationType {
   REPLY
   FOLLOW
   REPOST
+}
+
+enum CommunityRole {
+  MEMBER
+  MODERATOR
+  OWNER
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  FLAGGED
+  REJECTED
 }

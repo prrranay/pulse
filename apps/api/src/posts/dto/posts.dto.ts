@@ -17,6 +17,10 @@ export class CreatePostDto {
   @IsOptional()
   @IsUrl({}, { message: 'Please provide a valid URL for the image' })
   imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  communityId?: string;
 }
 
 export class UpdatePostDto {

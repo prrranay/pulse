@@ -19,6 +19,10 @@ import { CommentsModule } from './comments/comments.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { RedisModule } from './redis/redis.module';
 import { JobsModule } from './jobs/jobs.module';
+import { CommunitiesModule } from './communities/communities.module';
+import { DiscoveryModule } from './discovery/discovery.module';
+import { AiModule } from './ai/ai.module';
+import { AdminModule } from './admin/admin.module';
 import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
 
 @Module({
@@ -55,6 +59,10 @@ import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
     PostsModule,
     CommentsModule,
     NotificationsModule,
+    CommunitiesModule,
+    DiscoveryModule,
+    AiModule,
+    AdminModule,
   ],
   providers: [
     {

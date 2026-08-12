@@ -1,0 +1,6 @@
+'use client';
+
+import { useParams, useRouter } from 'react-router-dom'; // Wait! Next.js does NOT use react-router-dom!
+// In Next.js we must use `useParams` from `next/navigation` and `useRouter` from `next/navigation`!
+// Let's make sure we import them correctly from next/navigation!
+// This is critical to prevent compilation errors.
