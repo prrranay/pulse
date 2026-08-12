@@ -1,0 +1,34 @@
+{
+  "name": "pulse",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Pulse — A production-oriented social media platform",
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,green \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:api": "npm run start:dev --workspace=apps/api",
+    "build": "npm run build --workspace=apps/web && npm run build --workspace=apps/api",
+    "build:web": "npm run build --workspace=apps/web",
+    "build:api": "npm run build --workspace=apps/api",
+    "lint": "npm run lint --workspace=apps/web && npm run lint --workspace=apps/api",
+    "lint:web": "npm run lint --workspace=apps/web",
+    "lint:api": "npm run lint --workspace=apps/api",
+    "typecheck": "npm run typecheck --workspace=apps/web && npm run typecheck --workspace=apps/api",
+    "typecheck:web": "npm run typecheck --workspace=apps/web",
+    "typecheck:api": "npm run typecheck --workspace=apps/api",
+    "db:migrate": "npx prisma migrate dev --schema=apps/api/prisma/schema.prisma",
+    "db:migrate:prod": "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma",
+    "db:studio": "npx prisma studio --schema=apps/api/prisma/schema.prisma",
+    "db:generate": "npx prisma generate --schema=apps/api/prisma/schema.prisma",
+    "db:seed": "npm run db:seed --workspace=apps/api",
+    "test": "npm run test --workspace=apps/api",
+    "test:e2e": "npm run test:e2e --workspace=apps/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.4"
+  }
+}
