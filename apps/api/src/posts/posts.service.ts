@@ -8,6 +8,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto, UpdatePostDto, FeedQueryDto } from './dto/posts.dto';
 import { Post, User } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
+import { RedisService } from '../redis/redis.service';
+import { InjectQueue } from '@nestjs/bull';
+import type { Queue } from 'bull';
 
 export interface AuthorSummary {
   id: string;
@@ -38,16 +42,46 @@ export interface PaginatedFeedResponse {
 
 @Injectable()
 export class PostsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+    private readonly redisService: RedisService,
+    @InjectQueue('moderation-queue') private readonly moderationQueue: Queue,
+  ) {}
 
   async create(authorId: string, dto: CreatePostDto): Promise<Post> {
-    return this.prisma.post.create({
+    const post = await this.prisma.post.create({
       data: {
         content: dto.content,
         imageUrl: dto.imageUrl,
         authorId,
       },
     });
+
+    // Enqueue moderation job asynchronously
+    await this.moderationQueue
+      .add(
+        'moderateContent',
+        { targetId: post.id, type: 'POST', content: post.content },
+        { attempts: 3, backoff: 5000 },
+      )
+      .catch((err: unknown) => {
+        console.error('Failed to enqueue post moderation job:', err);
+      });
+
+    // Invalidate user feed cache in Redis
+    try {
+      const keys = await this.redisService
+        .getClient()
+        .keys(`feed:user_${authorId}:*`);
+      if (keys.length > 0) {
+        await this.redisService.getClient().del(...keys);
+      }
+    } catch (err) {
+      console.error('Failed to invalidate feed cache keys:', err);
+    }
+
+    return post;
   }
 
   async update(
@@ -159,6 +193,16 @@ export class PostsService {
     query: FeedQueryDto,
   ): Promise<PaginatedFeedResponse> {
     const { cursor, limit } = query;
+    const cacheKey = `feed:user_${currentUserId}:cursor_${cursor || 'none'}:limit_${limit}`;
+
+    try {
+      const cached = await this.redisService.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached) as PaginatedFeedResponse;
+      }
+    } catch (err) {
+      console.error('Redis feed cache read failed:', err);
+    }
 
     // Get followed users
     const followed = await this.prisma.follow.findMany({
@@ -241,10 +285,18 @@ export class PostsService {
       }),
     );
 
-    return {
+    const result = {
       items: enrichedItems,
       nextCursor,
     };
+
+    try {
+      await this.redisService.set(cacheKey, JSON.stringify(result), 120); // 2 minutes TTL
+    } catch (err) {
+      console.error('Redis feed cache write failed:', err);
+    }
+
+    return result;
   }
 
   async like(userId: string, postId: string): Promise<{ message: string }> {
@@ -257,6 +309,13 @@ export class PostsService {
       await this.prisma.like.create({
         data: { userId, postId },
       });
+      // Trigger notification
+      await this.notificationsService.createNotification(
+        post.authorId,
+        userId,
+        'LIKE',
+        postId,
+      );
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err?.code === 'P2002') {
@@ -334,6 +393,13 @@ export class PostsService {
       await this.prisma.repost.create({
         data: { userId, postId },
       });
+      // Trigger notification
+      await this.notificationsService.createNotification(
+        post.authorId,
+        userId,
+        'REPOST',
+        postId,
+      );
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err?.code === 'P2002') {

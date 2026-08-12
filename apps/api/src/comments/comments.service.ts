@@ -2,6 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCommentDto, CommentQueryDto } from './dto/comments.dto';
 import { Comment } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
+import { InjectQueue } from '@nestjs/bull';
+import type { Queue } from 'bull';
 
 export interface AuthorSummary {
   id: string;
@@ -27,7 +30,11 @@ export interface CommentResponse {
 
 @Injectable()
 export class CommentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+    @InjectQueue('moderation-queue') private readonly moderationQueue: Queue,
+  ) {}
 
   async createComment(
     userId: string,
@@ -39,13 +46,34 @@ export class CommentsService {
       throw new NotFoundException('Post not found');
     }
 
-    return this.prisma.comment.create({
+    const comment = await this.prisma.comment.create({
       data: {
         content: dto.content,
         userId,
         postId,
       },
     });
+
+    await this.notificationsService.createNotification(
+      post.authorId,
+      userId,
+      'COMMENT',
+      postId,
+      comment.id,
+    );
+
+    // Enqueue comment moderation job asynchronously
+    await this.moderationQueue
+      .add(
+        'moderateContent',
+        { targetId: comment.id, type: 'COMMENT', content: comment.content },
+        { attempts: 3, backoff: 5000 },
+      )
+      .catch((err: unknown) => {
+        console.error('Failed to enqueue comment moderation job:', err);
+      });
+
+    return comment;
   }
 
   async createReply(
@@ -61,7 +89,7 @@ export class CommentsService {
       throw new NotFoundException('Parent comment not found');
     }
 
-    return this.prisma.comment.create({
+    const reply = await this.prisma.comment.create({
       data: {
         content: dto.content,
         userId,
@@ -69,6 +97,27 @@ export class CommentsService {
         parentId: parentCommentId,
       },
     });
+
+    await this.notificationsService.createNotification(
+      parentComment.userId,
+      userId,
+      'REPLY',
+      parentComment.postId,
+      reply.id,
+    );
+
+    // Enqueue reply moderation job asynchronously
+    await this.moderationQueue
+      .add(
+        'moderateContent',
+        { targetId: reply.id, type: 'COMMENT', content: reply.content },
+        { attempts: 3, backoff: 5000 },
+      )
+      .catch((err: unknown) => {
+        console.error('Failed to enqueue reply moderation job:', err);
+      });
+
+    return reply;
   }
 
   async getComments(

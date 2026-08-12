@@ -17,6 +17,7 @@ import { CreatePostDto, UpdatePostDto, FeedQueryDto } from './dto/posts.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { JwtService } from '@nestjs/jwt';
+import { RateLimit } from '../common/decorators/rate-limit.decorator';
 
 @Controller('posts')
 export class PostsController {
@@ -27,6 +28,7 @@ export class PostsController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
+  @RateLimit(20, 60)
   @HttpCode(HttpStatus.CREATED)
   async create(@CurrentUser('id') userId: string, @Body() dto: CreatePostDto) {
     return this.postsService.create(userId, dto);

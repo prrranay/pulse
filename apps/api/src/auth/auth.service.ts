@@ -8,12 +8,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
 import * as bcrypt from 'bcrypt';
 import { User } from '@prisma/client';
+import { InjectQueue } from '@nestjs/bull';
+import type { Queue } from 'bull';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    @InjectQueue('email-queue') private readonly emailQueue: Queue,
   ) {}
 
   async register(dto: RegisterDto): Promise<Omit<User, 'password'>> {
@@ -47,6 +50,17 @@ export class AuthService {
         displayName: displayName || username,
       },
     });
+
+    // Enqueue welcome email asynchronously
+    await this.emailQueue
+      .add(
+        'sendWelcomeEmail',
+        { email: user.email, username: user.username },
+        { attempts: 2, backoff: 3000 },
+      )
+      .catch((err: unknown) => {
+        console.error('Failed to enqueue welcome email job:', err);
+      });
 
     const result = { ...user } as Record<string, any>;
     delete result.password;

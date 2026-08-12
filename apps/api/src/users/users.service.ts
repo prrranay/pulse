@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/users.dto';
 import { User } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface UserProfileResponse {
   id: string;
@@ -23,7 +24,10 @@ export interface UserProfileResponse {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async findByUsername(
     username: string,
@@ -107,6 +111,12 @@ export class UsersService {
           followingId,
         },
       });
+      // Trigger notification
+      await this.notificationsService.createNotification(
+        followingId,
+        followerId,
+        'FOLLOW',
+      );
     } catch (error: unknown) {
       const err = error as Record<string, any>;
       // Prisma P2002 error code is for unique constraint violation

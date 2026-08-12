@@ -13,6 +13,7 @@ import { CommentsService } from './comments.service';
 import { CreateCommentDto, CommentQueryDto } from './dto/comments.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
+import { RateLimit } from '../common/decorators/rate-limit.decorator';
 
 @Controller()
 export class CommentsController {
@@ -20,6 +21,7 @@ export class CommentsController {
 
   @Post('posts/:id/comments')
   @UseGuards(JwtAuthGuard)
+  @RateLimit(20, 60)
   @HttpCode(HttpStatus.CREATED)
   async createComment(
     @CurrentUser('id') userId: string,

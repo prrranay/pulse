@@ -8,6 +8,7 @@ import { PostResponse, ApiResponse } from '../types';
 import PostComposer from '../components/post-composer';
 import PostCard from '../components/post-card';
 import { PostSkeleton } from '../components/skeleton-loader';
+import NotificationBell from '../components/notification-bell';
 import Link from 'next/link';
 import { Flame, LogIn, UserPlus, Sparkles } from 'lucide-react';
 
@@ -119,6 +120,7 @@ export default function HomePage() {
           </Link>
 
           <div className="flex items-center gap-4">
+            <NotificationBell />
             <Link
               href={`/${user.username}`}
               className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all"

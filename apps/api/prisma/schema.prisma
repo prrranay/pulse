@@ -10,26 +10,28 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  email       String   @unique
-  username    String   @unique
-  displayName String?  @map("display_name")
-  bio         String?
-  avatarUrl   String?  @map("avatar_url")
-  password    String
-  isVerified  Boolean  @default(false) @map("is_verified")
-  role        Role     @default(USER)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String         @id @default(uuid())
+  email         String         @unique
+  username      String         @unique
+  displayName   String?        @map("display_name")
+  bio           String?
+  avatarUrl     String?        @map("avatar_url")
+  password      String
+  isVerified    Boolean        @default(false) @map("is_verified")
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
 
   // Relationships
-  followers  Follow[]   @relation("following")
-  following  Follow[]   @relation("follower")
-  posts      Post[]
-  likes      Like[]
-  bookmarks  Bookmark[]
-  reposts    Repost[]
-  comments   Comment[]
+  followers     Follow[]       @relation("following")
+  following     Follow[]       @relation("follower")
+  posts         Post[]
+  likes         Like[]
+  bookmarks     Bookmark[]
+  reposts       Repost[]
+  comments      Comment[]
+  notifications Notification[] @relation("recipient")
+  actions       Notification[] @relation("actor")
 
   @@map("users")
 }
@@ -59,11 +61,12 @@ model Post {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relationships
-  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  likes     Like[]
-  bookmarks Bookmark[]
-  reposts   Repost[]
-  comments  Comment[]
+  author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  likes         Like[]
+  bookmarks     Bookmark[]
+  reposts       Repost[]
+  comments      Comment[]
+  notifications Notification[]
 
   @@index([authorId])
   @@index([createdAt])
@@ -128,10 +131,11 @@ model Comment {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relationships
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  parent    Comment?  @relation("comment_replies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Comment[] @relation("comment_replies")
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent        Comment?       @relation("comment_replies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Comment[]      @relation("comment_replies")
+  notifications Notification[]
 
   @@index([userId])
   @@index([postId])
@@ -139,8 +143,38 @@ model Comment {
   @@map("comments")
 }
 
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String           @map("recipient_id")
+  actorId     String           @map("actor_id")
+  type        NotificationType
+  postId      String?          @map("post_id")
+  commentId   String?          @map("comment_id")
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  // Relationships
+  recipient User     @relation("recipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User     @relation("actor", fields: [actorId], references: [id], onDelete: Cascade)
+  post      Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId])
+  @@index([readAt])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
 enum Role {
   USER
   ADMIN
   MODERATOR
+}
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  REPLY
+  FOLLOW
+  REPOST
 }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 import {
   appConfig,
@@ -15,6 +16,10 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { PostsModule } from './posts/posts.module';
 import { CommentsModule } from './comments/comments.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { RedisModule } from './redis/redis.module';
+import { JobsModule } from './jobs/jobs.module';
+import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
 
 @Module({
   imports: [
@@ -39,12 +44,23 @@ import { CommentsModule } from './comments/comments.module';
     // ── Database ─────────────────────────────────────────
     PrismaModule,
 
+    // ── Global Redis Module ──────────────────────────────
+    RedisModule,
+    JobsModule,
+
     // ── Feature Modules ──────────────────────────────────
     HealthModule,
     AuthModule,
     UsersModule,
     PostsModule,
     CommentsModule,
+    NotificationsModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: RateLimiterGuard,
+    },
   ],
 })
 export class AppModule {}
