@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../hooks/auth-context';
 import { apiClient } from '../lib/api-client';
@@ -15,11 +16,23 @@ import {
 } from 'lucide-react';
 
 /* eslint-disable @next/next/no-img-element */
+/* eslint-disable react-hooks/set-state-in-effect */
 
 export default function PostCard({ post }: { post: PostResponse }) {
   const router = useRouter();
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
+
+  // Optimistic states
+  const [localIsLiked, setLocalIsLiked] = useState(post.isLiked);
+  const [localLikesCount, setLocalLikesCount] = useState(post.likesCount);
+
+  const [localIsBookmarked, setLocalIsBookmarked] = useState(post.isBookmarked);
+
+  const [localIsReposted, setLocalIsReposted] = useState(post.isReposted);
+  const [localRepostsCount, setLocalRepostsCount] = useState(post.repostsCount);
+
+
 
   const invalidateAllPostFeeds = () => {
     queryClient.invalidateQueries({ queryKey: ['feed'] });
@@ -34,36 +47,67 @@ export default function PostCard({ post }: { post: PostResponse }) {
 
   // 1. Like mutation
   const likeMutation = useMutation({
-    mutationFn: () =>
-      post.isLiked
-        ? apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/like`)
-        : apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/like`),
+    mutationFn: (shouldLike: boolean) =>
+      shouldLike
+        ? apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/like`)
+        : apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/like`),
     onSuccess: () => {
       invalidateAllPostFeeds();
+    },
+    onError: () => {
+      setLocalIsLiked(post.isLiked);
+      setLocalLikesCount(post.likesCount);
     },
   });
 
   // 2. Bookmark mutation
   const bookmarkMutation = useMutation({
-    mutationFn: () =>
-      post.isBookmarked
-        ? apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/bookmark`)
-        : apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/bookmark`),
+    mutationFn: (shouldBookmark: boolean) =>
+      shouldBookmark
+        ? apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/bookmark`)
+        : apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/bookmark`),
     onSuccess: () => {
       invalidateAllPostFeeds();
+    },
+    onError: () => {
+      setLocalIsBookmarked(post.isBookmarked);
     },
   });
 
   // 3. Repost mutation
   const repostMutation = useMutation({
-    mutationFn: () =>
-      post.isReposted
-        ? apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/repost`)
-        : apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/repost`),
+    mutationFn: (shouldRepost: boolean) =>
+      shouldRepost
+        ? apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/repost`)
+        : apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/repost`),
     onSuccess: () => {
       invalidateAllPostFeeds();
     },
+    onError: () => {
+      setLocalIsReposted(post.isReposted);
+      setLocalRepostsCount(post.repostsCount);
+    },
   });
+
+  useEffect(() => {
+    if (!likeMutation.isPending) {
+      setLocalIsLiked(post.isLiked);
+      setLocalLikesCount(post.likesCount);
+    }
+  }, [post.isLiked, post.likesCount, likeMutation.isPending]);
+
+  useEffect(() => {
+    if (!bookmarkMutation.isPending) {
+      setLocalIsBookmarked(post.isBookmarked);
+    }
+  }, [post.isBookmarked, bookmarkMutation.isPending]);
+
+  useEffect(() => {
+    if (!repostMutation.isPending) {
+      setLocalIsReposted(post.isReposted);
+      setLocalRepostsCount(post.repostsCount);
+    }
+  }, [post.isReposted, post.repostsCount, repostMutation.isPending]);
 
   // 4. Delete post mutation
   const deletePostMutation = useMutation({
@@ -79,7 +123,11 @@ export default function PostCard({ post }: { post: PostResponse }) {
       router.push('/login');
       return;
     }
-    likeMutation.mutate();
+    const nextIsLiked = !localIsLiked;
+    const nextLikesCount = nextIsLiked ? localLikesCount + 1 : Math.max(0, localLikesCount - 1);
+    setLocalIsLiked(nextIsLiked);
+    setLocalLikesCount(nextLikesCount);
+    likeMutation.mutate(nextIsLiked);
   };
 
   const handleBookmark = (e: React.MouseEvent) => {
@@ -88,7 +136,9 @@ export default function PostCard({ post }: { post: PostResponse }) {
       router.push('/login');
       return;
     }
-    bookmarkMutation.mutate();
+    const nextIsBookmarked = !localIsBookmarked;
+    setLocalIsBookmarked(nextIsBookmarked);
+    bookmarkMutation.mutate(nextIsBookmarked);
   };
 
   const handleRepost = (e: React.MouseEvent) => {
@@ -97,7 +147,11 @@ export default function PostCard({ post }: { post: PostResponse }) {
       router.push('/login');
       return;
     }
-    repostMutation.mutate();
+    const nextIsReposted = !localIsReposted;
+    const nextRepostsCount = nextIsReposted ? localRepostsCount + 1 : Math.max(0, localRepostsCount - 1);
+    setLocalIsReposted(nextIsReposted);
+    setLocalRepostsCount(nextRepostsCount);
+    repostMutation.mutate(nextIsReposted);
   };
 
   const handleDelete = (e: React.MouseEvent) => {
@@ -207,42 +261,39 @@ export default function PostCard({ post }: { post: PostResponse }) {
             {/* Repost Button */}
             <button
               onClick={handleRepost}
-              disabled={repostMutation.isPending}
-              className={`flex items-center gap-1.5 text-xs transition-all hover:text-emerald-400 disabled:opacity-50 ${
-                post.isReposted ? 'text-emerald-400 font-semibold' : ''
+              className={`flex items-center gap-1.5 text-xs transition-all hover:text-emerald-400 ${
+                localIsReposted ? 'text-emerald-400 font-semibold' : ''
               }`}
             >
-              <Repeat className={`h-4.5 w-4.5 transition-transform ${repostMutation.isPending ? 'animate-spin' : ''}`} />
-              <span>{post.repostsCount}</span>
+              <Repeat className="h-4.5 w-4.5 transition-transform" />
+              <span>{localRepostsCount}</span>
             </button>
 
             {/* Like Button */}
             <button
               onClick={handleLike}
-              disabled={likeMutation.isPending}
-              className={`flex items-center gap-1.5 text-xs transition-all hover:text-rose-500 disabled:opacity-50 ${
-                post.isLiked ? 'text-rose-500 font-semibold' : ''
+              className={`flex items-center gap-1.5 text-xs transition-all hover:text-rose-500 ${
+                localIsLiked ? 'text-rose-500 font-semibold' : ''
               }`}
             >
               <Heart
                 className={`h-4.5 w-4.5 transition-all ${
-                  post.isLiked ? 'fill-rose-500 stroke-rose-500 scale-110' : ''
-                } ${likeMutation.isPending ? 'scale-90 opacity-70' : ''}`}
+                  localIsLiked ? 'fill-rose-500 stroke-rose-500 scale-110' : ''
+                }`}
               />
-              <span>{post.likesCount}</span>
+              <span>{localLikesCount}</span>
             </button>
 
             {/* Bookmark Button */}
             <button
               onClick={handleBookmark}
-              disabled={bookmarkMutation.isPending}
-              className={`flex items-center gap-1.5 text-xs transition-all hover:text-amber-500 disabled:opacity-50 ${
-                post.isBookmarked ? 'text-amber-500 font-semibold' : ''
+              className={`flex items-center gap-1.5 text-xs transition-all hover:text-amber-500 ${
+                localIsBookmarked ? 'text-amber-500 font-semibold' : ''
               }`}
             >
               <Bookmark
                 className={`h-4.5 w-4.5 ${
-                  post.isBookmarked ? 'fill-amber-500 stroke-amber-500' : ''
+                  localIsBookmarked ? 'fill-amber-500 stroke-amber-500' : ''
                 }`}
               />
             </button>

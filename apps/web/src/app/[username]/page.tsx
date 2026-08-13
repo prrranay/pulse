@@ -1,6 +1,7 @@
 'use client';
 
 /* eslint-disable @next/next/no-img-element */
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useParams, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
@@ -64,6 +65,12 @@ export default function ProfilePage() {
 
   const profile = profileRes?.data;
 
+  // Local optimistic follow states
+  const [localIsFollowing, setLocalIsFollowing] = useState<boolean | undefined>(undefined);
+  const [localFollowersCount, setLocalFollowersCount] = useState<number | undefined>(undefined);
+
+
+
   // 2. Fetch Followers List
   const { data: followersRes, isLoading: followersLoading } = useQuery<
     ApiResponse<FollowUser[]>
@@ -84,29 +91,29 @@ export default function ProfilePage() {
 
   // 4. Follow Mutation
   const followMutation = useMutation({
-    mutationFn: (userId: string) =>
-      apiClient.post<ApiResponse<{ message: string }>>(`/users/${userId}/follow`),
+    mutationFn: ({ userId, shouldFollow }: { userId: string; shouldFollow: boolean }) =>
+      shouldFollow
+        ? apiClient.post<ApiResponse<{ message: string }>>(`/users/${userId}/follow`)
+        : apiClient.delete<ApiResponse<{ message: string }>>(`/users/${userId}/follow`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile', username] });
       if (profile?.id) {
         queryClient.invalidateQueries({ queryKey: ['followers', profile.id] });
         queryClient.invalidateQueries({ queryKey: ['following', profile.id] });
       }
+    },
+    onError: () => {
+      setLocalIsFollowing(profile?.isFollowing);
+      setLocalFollowersCount(profile?.followersCount);
     },
   });
 
-  // 5. Unfollow Mutation
-  const unfollowMutation = useMutation({
-    mutationFn: (userId: string) =>
-      apiClient.delete<ApiResponse<{ message: string }>>(`/users/${userId}/follow`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['profile', username] });
-      if (profile?.id) {
-        queryClient.invalidateQueries({ queryKey: ['followers', profile.id] });
-        queryClient.invalidateQueries({ queryKey: ['following', profile.id] });
-      }
-    },
-  });
+  useEffect(() => {
+    if (profile && !followMutation.isPending) {
+      setLocalIsFollowing(profile.isFollowing);
+      setLocalFollowersCount(profile.followersCount);
+    }
+  }, [profile, followMutation.isPending]);
 
   // 5.5 Start Chat Mutation
   const startChatMutation = useMutation({
@@ -244,11 +251,15 @@ export default function ProfilePage() {
     }
     if (!profile) return;
 
-    if (profile.isFollowing) {
-      unfollowMutation.mutate(profile.id);
-    } else {
-      followMutation.mutate(profile.id);
-    }
+    const nextIsFollowing = !localIsFollowing;
+    const nextFollowersCount = nextIsFollowing
+      ? (localFollowersCount ?? 0) + 1
+      : Math.max(0, (localFollowersCount ?? 0) - 1);
+
+    setLocalIsFollowing(nextIsFollowing);
+    setLocalFollowersCount(nextFollowersCount);
+
+    followMutation.mutate({ userId: profile.id, shouldFollow: nextIsFollowing });
   };
 
   if (authLoading || profileLoading) {
@@ -321,14 +332,13 @@ export default function ProfilePage() {
               </button>
               <button
                 onClick={handleFollowAction}
-                disabled={followMutation.isPending || unfollowMutation.isPending}
                 className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-                  profile.isFollowing
+                  (localIsFollowing !== undefined ? localIsFollowing : profile.isFollowing)
                     ? 'border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800'
                     : 'bg-indigo-600 text-white hover:bg-indigo-500'
                 }`}
               >
-                {profile.isFollowing ? (
+                {(localIsFollowing !== undefined ? localIsFollowing : profile.isFollowing) ? (
                   <>
                     <UserCheck className="h-3.5 w-3.5" /> Following
                   </>
@@ -380,7 +390,7 @@ export default function ProfilePage() {
               activeTab === 'followers' ? 'text-indigo-400 font-semibold' : 'text-slate-400'
             }`}
           >
-            <span className="font-bold text-slate-100">{profile.followersCount}</span> Followers
+            <span className="font-bold text-slate-100">{localFollowersCount !== undefined ? localFollowersCount : profile.followersCount}</span> Followers
           </button>
         </div>
 
