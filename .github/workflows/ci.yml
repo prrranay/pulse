@@ -25,7 +25,8 @@ jobs:
         run: npm ci
 
       - name: Generate Prisma Client
-        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+        working-directory: apps/api
+        run: npx prisma generate
 
       - name: Lint API
         run: npm run lint:api
@@ -88,10 +89,12 @@ jobs:
         run: npm ci
 
       - name: Generate Prisma Client
-        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+        working-directory: apps/api
+        run: npx prisma generate
 
       - name: Run Prisma migrations
-        run: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+        working-directory: apps/api
+        run: npx prisma migrate deploy
 
       - name: Run tests
         run: npm run test
@@ -115,7 +118,8 @@ jobs:
         run: npm ci
 
       - name: Generate Prisma Client
-        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+        working-directory: apps/api
+        run: npx prisma generate
 
       - name: Build monorepo
         run: npm run build
