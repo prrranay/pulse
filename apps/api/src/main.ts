@@ -18,10 +18,22 @@ async function bootstrap(): Promise<void> {
 
   // ── Security ───────────────────────────────────────────
   app.use(helmet());
+  const allowedOrigins = [
+    configService.get<string>('FRONTEND_URL'),
+    configService.get<string>('CORS_ORIGIN'),
+    'http://localhost:3000',
+  ].filter((o): o is string => !!o);
+
   app.enableCors({
-    origin:
-      configService.get<string>('FRONTEND_URL') ||
-      configService.get<string>('CORS_ORIGIN', 'http://localhost:3000'),
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+      } else if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
   });
 

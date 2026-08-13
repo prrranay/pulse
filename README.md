@@ -4,166 +4,194 @@ Pulse is a high-performance, production-oriented developer social platform built
 
 ---
 
-## Architecture Diagrams
+## 1. Product Overview
+Pulse is a professional networking and content sharing platform customized for developers. It supports rich user profiles, community forums, real-time messaging, content feed generation with cursor pagination, and asynchronous AI-assisted moderation.
 
-### 1. Real-Time Chat Flow
-```mermaid
-sequenceDiagram
-    participant Sender as Client A
-    participant Gateway as Socket.IO Gateway
-    participant Guard as Auth Guard
-    participant DB as PostgreSQL
-    participant Recipient as Client B
+## 2. Business Value
+By decoupling rendering from business logic and adopting high-availability caching and background runners, Pulse reduces database read-write contentions, isolates resource-heavy AI checks from the request-response thread, and guarantees low latencies for scaling active users.
 
-    Sender->>Gateway: emit("sendMessage", payload)
-    Gateway->>Guard: Validate Handshake JWT & Room membership
-    alt Unauthorized
-        Guard-->>Sender: emit("error", Unauthorized)
-    else Authorized
-        Guard->>DB: Save Message & Update Conversation
-        DB-->>Gateway: Persisted Message
-        Gateway->>Recipient: emit("message", messagePayload)
-    end
-```
+## 3. Feature List
+- **Stateless Authentication**: Signup, password hashing via bcrypt, stateless JWT issuance.
+- **Social Content Core**: Post/Comment creation, like/unlike, bookmarking, and reposting.
+- **Dynamic Follows**: Follow/unfollow relations with self-following prevention.
+- **Asynchronous Moderation**: Multi-tier safety gates using external AI and local rule fallback layers.
+- **Hybrid Real-Time Chat**: REST-based messaging with WebSockets for dynamic typing indicators, live socket routing, and active connection tracking.
+- **Admin Dashboard**: Real-time platform analytics tracking active users, APPROVED posts, comments, and messages count.
 
-### 2. Live Notification Dispatch
+## 4. Screenshots
+*Screenshots representing the Next.js desktop interface will be displayed here, showcasing the dark glassmorphic feed layout, the sidebar navigation, the real-time chat window, and the green active status badges on user avatars.*
+
+## 5. Tech Stack
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, React Query (TanStack Query) for query caching and optimistic mutations, Socket.io Client for notification rooms, Vanilla CSS for glassmorphism layout.
+- **Backend**: NestJS (TypeScript), Passport JWT, class-validator, Prisma ORM.
+- **Cache & Telemetry**: Redis (ioredis) managing rate limits, presence trackers, and feed caches.
+- **Queue**: BullMQ registered on Redis pools for transactional runners.
+- **Primary Database**: PostgreSQL 16 database.
+
+## 6. Architecture
+Pulse divides responsibilities between two workspaces inside a monorepo setup:
+- `apps/web`: Handles client rendering, client-side queries, and WebSocket handshake instances.
+- `apps/api`: Handles API requests, JWT verification, database calls, caching logic, and worker queues.
+
 ```mermaid
 flowchart TD
-    Action[User Interaction: Like/Comment/Follow] --> NestJS[NestJS Controller]
-    NestJS --> DB[Save Notification in PostgreSQL]
-    DB --> Gateway[Socket.IO Gateway]
-    Gateway --> Socket[Emit live event to user room: user_userId]
-    Socket --> Client[Recipient UI updates instantly]
+    Client[Next.js Client] -->|HTTP REST| API[NestJS API Server]
+    Client -->|Socket.IO| Gateway[Socket.IO Gateway]
+    
+    API -->|Read/Write| DB[(PostgreSQL)]
+    API -->|Read/Write Cache| Redis[(Redis Server)]
+    API -->|Enqueue Jobs| Redis
+    
+    Redis -->|Process Jobs| Workers[BullMQ Workers]
+    Workers -->|AI moderations| Gemini[Gemini API]
+    Workers -->|Write status| DB
 ```
 
-### 3. Asynchronous Background Jobs (BullMQ)
+## 7. Database Design
+Pulse maps relationships using a PostgreSQL relational database structured via Prisma:
+- **User**: Stores profiles, credential hash, active timestamps (`lastActiveAt`), and roles (`USER`, `ADMIN`, `MODERATOR`).
+- **Post / Comment**: Stores textual content, images, author IDs, and safety status states (`PENDING`, `APPROVED`, `FLAGGED`, `REJECTED`), alongside `moderationReason` and `moderatedAt` fields.
+- **Like / Bookmark / Repost / Follow**: Many-to-many relationship tables mapped with unique composite indexes (`userId_postId`, `followerId_followingId`) to prevent duplicate transactions.
+- **Conversation**: Direct chat conversation rooms. Stores `directKey` unique index (deterministic format: `[userAId, userBId].sort().join(':')`) to prevent duplicate 1-to-1 conversation entries.
+
+## 8. Authentication
+Pulse uses stateless JWT (JSON Web Tokens) verification:
+- On registration, passwords are encrypted via `bcrypt` and saved.
+- On login, a stateless JWT is signed containing the user ID, email, and role.
+- All requests to protected controllers are intercepted by a `JwtAuthGuard` mapping authorization bearer tokens. Tokens are stateless and not persisted in database or cache.
+
+## 9. Feed Architecture
+Pulse implements **Cursor-Based Pagination** sorting items by `createdAt: 'desc'` and fetching records using post IDs as cursors (skipping 1 post if cursor is present). 
+To optimize feed load times, Pulse batches likes, bookmarks, and reposts states in single queries using database `findMany` sets to avoid N+1 query patterns. Results are cached in Redis (`feed:user_${userId}:*`) with a 120-second TTL. The cache is invalidated dynamically using Redis `scanStream` when a user creates a post or interacts with content.
+
+## 10. Real-Time Notifications
+When a user likes/comments/reposts content or follows another user:
+1. The request hits the NestJS HTTP controller.
+2. The notification record is persisted in the PostgreSQL database.
+3. The server checks active connections in `NotificationsGateway` and emits a live event (`notification`) to the target user's room (`user_userId`).
+
+## 11. Chat Architecture
+Pulse implements a hybrid REST and WebSocket chat architecture:
+1. **Message Submission**: Client sends messages using HTTP REST (`POST /api/v1/chat/conversations/:id/messages`).
+2. **Access Control**: The controller verifies authorization and room membership before saving.
+3. **Database Persistence**: The message is saved in the PostgreSQL database.
+4. **WebSocket Delivery**: After DB persistence succeeds, the message is emitted via the `ChatGateway` room using Socket.IO (`to(conversationId).emit('message')`).
+5. **Typing Indicators**: WebSockets are used to dispatch throttled client-to-client typing signals (`typing` $\to$ `user_typing`) dynamically.
+
+## 12. Redis
+Redis serves four active workloads:
+1. **Feed Cache**: Caches feed responses under user-specific cursor keys with a 120s TTL.
+2. **Rate Limiting**: Custom `RateLimiterGuard` tracks request frequencies atomically.
+3. **Presence Tracker**: Tracks user sockets count in a Redis Set (`online:user:${userId}`). User is marked `online` if the cardinality is $>0$, and `offline` when it drops to `0`.
+4. **BullMQ Storage**: Serves as the database storage backend for job queues.
+
+## 13. BullMQ
+Heavy out-of-band computations are enqueued to a Redis-backed BullMQ runner:
+- **email-queue**: Dequeues registration tasks; logs welcome actions (mocked email delivery).
+- **moderation-queue**: Dequeues safety content verification tasks to check created post/comment texts.
+
+## 14. AI
+Pulse links text composition and moderation checks to external Gemini API models:
+- **AI Post Assistant**: Adjusts compositions through REST endpoints (`/ai/refine`) for different tones. If the API is missing or fails, it throws a `503 Service Unavailable` error instead of returning mocked text.
+- **Timeout Protection**: All API calls are protected by a strict **5-second timeout** using `AbortController` to prevent server hang-ups.
+- **Model Mapping**: Configured dynamically using the `GEMINI_MODEL` environment variable.
+
+## 15. Moderation
+Every post and comment is moderated asynchronously:
+1. Content is enqueued to `moderation-queue` upon creation.
+2. The worker calls `AiService.moderateContent` using the Gemini model.
+3. If the external AI call fails, it falls back to a **Local Blacklist regex check** (`spam`, `malware`, `offensive`, `abuse`, `hack`).
+4. The database is updated with the status (`APPROVED`, `FLAGGED`, `REJECTED`), a detailed `moderationReason`, and `moderatedAt` timestamp.
+5. PENDING, FLAGGED, and REJECTED content is omitted from public feeds. Admins and authors can view pending items; only admins can view flagged/rejected entries.
+
+## 16. Search & Trending
+- **Search**: Executes case-insensitive `findMany` filters on posts, comments, or users.
+- **Trending**: Candidate posts created within the last 7 days are loaded. The application scores each post using the formula:
+  $$\text{Score} = (\text{likes} \times 2) + (\text{comments} \times 3) + (\text{reposts} \times 4) + \text{freshness component}$$
+  Where the freshness component decays over time. Only approved content is allowed in trending.
+
+## 17. Security
+- **Helmet Headers**: Configures security-focused HTTP response headers.
+- **Origin CORS Gates**: Strict CORS setup on HTTP and WebSockets allowing only configured origins (Vercel production URL and Localhost).
+- **Rate Limiters**: Tracks request quotas dynamically on auth and AI compose controllers.
+
+## 18. CI/CD
+Pulse uses GitHub Actions for continuous integration.
 ```mermaid
 flowchart LR
-    API[Client API Request] --> DB[Save initial Post/Comment state]
-    DB --> Queue[BullMQ Queue]
-    Queue --> Job[Job Store: Redis]
-    Job --> Worker[Moderation/Email Worker]
-    Worker --> AI[Gemini Flash Safety Classification]
-    AI --> UpdateDB[Update status APPROVED/FLAGGED in PostgreSQL]
+    Push[Git Push / PR] --> Lint[1. Lint Check]
+    Lint --> Typecheck[2. Type Check]
+    Typecheck --> Test[3. Jest Tests: Postgres + Redis Services]
+    Test --> Build[4. Build Monorepo]
+    Build --> Deploy{Push to main?}
+    Deploy -- Yes --> Vercel[Vercel Auto Deploy]
 ```
 
----
+## 19. Deployment
+- **Frontend**: Automatically deployed to **Vercel** via GitHub Actions on pushes to the `main` branch.
+- **Backend**: Hosted on **Railway** as a persistent Node process.
+- **Database / Cache**: Uses managed PostgreSQL and managed Redis services on Railway.
+- **Database Migrations**: Applied during backend deployment using `npx prisma migrate deploy`.
 
-## Tech Stack & Architecture
+## 20. Environment Variables
 
-### Frontend Workspace
-- **Core**: Next.js 16 (App Router), React 19, TypeScript
-- **State & Fetching**: React Query (TanStack Query) for query caching and optimistic mutations
-- **Styling**: Vanilla CSS with curated dark glassmorphism styling
-- **Real-Time Client**: Socket.io Client for notification rooms
+### Frontend (Next.js)
+- `NEXT_PUBLIC_API_URL`: Production backend URL (e.g. `https://api.pulse.dev/api/v1`).
+- `NEXT_PUBLIC_WS_URL`: Production Socket.io server endpoint (e.g. `https://api.pulse.dev`).
 
-### Backend Workspace
-- **Core**: NestJS (TypeScript), Passport JWT, class-validator
-- **Database**: PostgreSQL with Prisma ORM
-- **Cache & Telemetry**: Redis (ioredis) managing rate limits, presence trackers, and feed caches
-- **Queue**: BullMQ registered on Redis pools for transactional runners
+### Backend (NestJS)
+- `PORT`: Backend port (default: `4000`).
+- `DATABASE_URL`: PostgreSQL connection string.
+- `REDIS_URL`: Redis connection URL.
+- `JWT_SECRET`: Stateless JWT signature key.
+- `FRONTEND_URL`: CORS allowed origin URL.
+- `GEMINI_API_KEY`: API access key.
+- `GEMINI_MODEL`: Model name (default: `gemini-1.5-flash`).
 
----
+## 21. Local Development
 
-## Core Engineering Decisions
+### 1. Prerequisites
+Install Node.js (v18+), PostgreSQL, and Redis.
 
-### Why PostgreSQL?
-We chose PostgreSQL as the primary transactional source of truth due to its strict ACID compliance, relational integrity (foreign keys, cascading deletes), and robust indexing. Complex relationships like followers/following, post interactions (likes, bookmarks), and communities are mapped natively with indexes on constraint keys.
-
-### Why Redis?
-Redis serves three critical system needs:
-1. **Low-Latency Feed Caching**: Home feeds are cached with a 120s TTL and invalidated instantly on new posts.
-2. **Atomic Rate Limiting**: Avoids query overhead on DB by tracking window thresholds using atomic transactions.
-3. **Real-Time Presence**: Keeps track of active Socket.IO connections.
-
-### Why BullMQ?
-Heavy auxiliary tasks (AI Content Moderation checks, Transactional Welcome Emails) are executed out-of-band to prevent bottlenecking the core client response. BullMQ provides Redis-backed queues offering message durability, retry strategies, backoff configurations, and concurrent worker threads.
-
-### Why Socket.IO?
-Socket.IO provides persistent duplex connections with fallback to HTTP long-polling, room-based broadcast mechanisms, and auto-reconnection filters. This makes dispatching real-time notifications and chat updates highly reliable.
-
-### Why Cursor-Based Pagination?
-Using traditional `OFFSET` pagination causes database query performance to degrade at scale (as Postgres must scan all previous records). Pulse implements **Cursor-Based Pagination** using unique post IDs as cursors. This ensures $O(1)$ query execution times regardless of feed depth.
-
-### Why separate frontend and backend?
-Pulse separates the frontend (Next.js) and backend (NestJS) workspaces to optimize compile times, decouple rendering from business logic, and enable independent horizontal scaling of frontend static page caches and backend transaction workers.
-
----
-
-## AI Architecture & Safety Filters
-
-Pulse integrates the **Google Gemini 1.5 Flash API** for writing refinements and safety moderation checks:
-- **Assistant Refinement**: Draft tone adjusters ("Improve", "Concise", "Professional", "Engaging") use specialized system prompts.
-- **Asynchronous Safety Check**: Moderation safety jobs classify text into `APPROVED`, `FLAGGED`, or `REJECTED` states. Flagged items receive prefix banners, and rejected items are removed.
-- **Availability Guard**: Every AI request is wrapped in a strict **5-second timeout** using `AbortController`. If Gemini fails or keys are missing, the service falls back to a local keyword-blacklist regex scan and standard string format helpers.
-
----
-
-## Rate Limiting Thresholds
-
-The custom `RateLimiterGuard` applies limits based on client IP or user ID:
-- **Authentication (`/auth/login`, `/auth/register`)**: Max 5 requests per minute (TTL: 60s).
-- **Post creation (`/posts`)**: Max 20 requests per minute.
-- **Comment creation (`/posts/:id/comments`)**: Max 20 requests per minute.
-- **AI Refinement (`/ai/refine`)**: Max 10 requests per minute.
-
----
-
-## Environment Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | NestJS API Port | `4000` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:123456@localhost:5432/pulse` |
-| `REDIS_URL` | Redis server address | `redis://localhost:6379` |
-| `JWT_SECRET` | Secret signature for authorization tokens | `pulse_jwt_secret_anchor_2026` |
-| `GEMINI_API_KEY` | Google Generative AI access key | *Optional (triggers fallbacks if missing)* |
-
----
-
-## Local Development Guide
-
-### 1. Prerequisite Installations
-Ensure PostgreSQL, Redis, and Node.js (v18+) are running locally.
-
-### 2. Setup Database & Sync Client
+### 2. Setup
 ```bash
-# Clone the repository
-cd pulse
-
-# Install all monorepo dependencies
+# Install dependencies
 npm install
 
-# Run Prisma schema migrations and generate client
+# Run database migrations
 npm run db:migrate
+
+# Generate Prisma Client
 npm run db:generate
 ```
 
-### 3. Run Services Concurrently
+### 3. Start Development
 ```bash
-# Boot Next.js and NestJS concurrently
 npm run dev
 ```
-- Frontend starts at: `http://localhost:3000`
-- Backend API starts at: `http://localhost:4000/api/v1`
+- Web: `http://localhost:3000`
+- API: `http://localhost:4000`
 
-### 4. Running the Test Suite
+## 22. Testing
+Pulse maintains a dual-testing strategy:
+1. **Unit & Module Mock Tests**: `npm run test` executes isolated service tests.
+2. **E2E Integration Test Suite**: Runs tests against actual PostgreSQL and Redis services (using mocked queues to prevent Bull connection leakage).
 ```bash
-# Run unit and integration tests
-npm test
+# Run test suite
+npm run test
 ```
 
-## Admin Dashboard Metrics & Analytics
+## 23. Engineering Trade-offs
+- **PostgreSQL Transactional Truth**: Choosing PostgreSQL guarantees strict data consistency for financial/social interactions (like follow relationships and database-unique constraints) at the expense of horizontally scaling database write throughput compared to NoSQL alternatives.
+- **Redis for Transient Workloads**: Used for caching and rate limiting to offload database query volumes. However, it introduces cache invalidation complexities.
+- **REST + WebSocket Hybrid Chat**: REST handles auth, access control, validation, and database persistence reliably. WebSocket handles real-time delivery and presence tracking. This reduces long-running WebSocket connections and limits connection overhead.
+- **Bounded Trending Calculation**: Trending scores are calculated on-demand in application memory from recent posts, avoiding heavy background DB analytics pipelines. However, this is bounded to posts from the last 7 days to maintain $O(N)$ memory safety.
+- **Stateless JWT**: Eliminates session lookups on database or caching layers, but tokens cannot be invalidated mid-lifespan without introducing blacklist stores.
 
-The admin panel displays platform metrics with strict technical honesty:
-- **Active Users**: Users who performed authenticated activity (e.g. logging in, creating/reading posts, fetching feeds, sending chat messages) in the past 30 days, tracked via `lastActiveAt` database updates (throttled to a maximum of 1 write per user per 15 minutes to prevent excessive writes).
-- **Total Posts**: Count of public platform posts that are successfully `APPROVED` (rejected content is omitted).
-- **Total Comments**: Count of public platform comments that are successfully `APPROVED` (rejected content is omitted).
-- **Total Messages**: The real-time database count of all direct chat messages sent.
+## 24. Known Limitations
+- **Local Fallback Accuracy**: The local rule-based safety fallback relies on simple RegEx matching. This lacks context safety awareness compared to semantic LLM moderations.
+- **No Direct Binary Uploads**: The post composer supports only external image links, bypassing S3 binary storage streams.
 
----
-
-## Known Trade-offs & Future Improvements
-
-1. **Local AI Fallbacks**: Blacklist keywords regex parsing is simple and doesn't capture nuanced context. Integrations with lightweight local classifiers (e.g. natural lang processors) could replace regex checks.
-2. **Media Uploads**: Post composer supports media URL binding, but direct binary image uploads are bypassed. Adding S3/Cloudinary storage streams inside a BullMQ `media-queue` is a future optimization.
+## 25. Future Improvements
+- **Media Upload Pipeline**: Introduce S3 storage buckets with asynchronous media compression jobs handled via BullMQ.
+- **Refresh Token Rotation**: Implement cookie-based JWT token rotation to enhance credential lifetimes.

@@ -20,15 +20,20 @@ import { RedisService } from '../redis/redis.service';
       origin: string | undefined,
       callback: (err: Error | null, allow?: boolean) => void,
     ) => {
-      const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const allowedOrigins = [
+        process.env.FRONTEND_URL,
+        process.env.CORS_ORIGIN,
+        'http://localhost:3000',
+      ].filter((o): o is string => !!o);
       const isDev = process.env.NODE_ENV !== 'production';
+
       if (!origin) {
         if (isDev) {
           callback(null, true);
         } else {
           callback(new Error('Origin required in production'));
         }
-      } else if (origin === allowedOrigin) {
+      } else if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));

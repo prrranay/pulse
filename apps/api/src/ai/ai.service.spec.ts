@@ -40,11 +40,15 @@ describe('AiService', () => {
 
   describe('moderateContent', () => {
     it('should run local blacklist fallback and return structured status/reason when GEMINI_API_KEY is missing', async () => {
-      const cleanContent = await service.moderateContent('Hello world this is safe');
+      const cleanContent = await service.moderateContent(
+        'Hello world this is safe',
+      );
       expect(cleanContent.status).toBe('APPROVED');
       expect(cleanContent.reason).toContain('Local Blacklist Check');
 
-      const hackContent = await service.moderateContent('this content is a hack tool');
+      const hackContent = await service.moderateContent(
+        'this content is a hack tool',
+      );
       expect(hackContent.status).toBe('REJECTED');
       expect(hackContent.reason).toContain('Local Blacklist Check');
     });
