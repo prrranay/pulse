@@ -159,6 +159,11 @@ export default function PostCard({ post }: { post: PostResponse }) {
                   day: 'numeric',
                 })}
               </span>
+              {post.moderationStatus === 'PENDING' && (
+                <span className="ml-2 inline-flex items-center rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-500 border border-amber-500/20">
+                  Under Review
+                </span>
+              )}
             </div>
 
             {isAuthor && (

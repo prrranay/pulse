@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto, UpdatePostDto, FeedQueryDto } from './dto/posts.dto';
-import { Post, User } from '@prisma/client';
+import { Post, User, ModerationStatus, Prisma } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RedisService } from '../redis/redis.service';
 import { InjectQueue } from '@nestjs/bull';
@@ -33,6 +33,7 @@ export interface PostResponse {
   isLiked: boolean;
   isBookmarked: boolean;
   isReposted: boolean;
+  moderationStatus?: ModerationStatus;
 }
 
 export interface PaginatedFeedResponse {
@@ -48,6 +49,33 @@ export class PostsService {
     private readonly redisService: RedisService,
     @InjectQueue('moderation-queue') private readonly moderationQueue: Queue,
   ) {}
+
+  private async getUserRole(userId?: string): Promise<string | undefined> {
+    if (!userId) return undefined;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role;
+  }
+
+  private async getPostModerationFilter(
+    currentUserId?: string,
+  ): Promise<Prisma.PostWhereInput> {
+    const role = await this.getUserRole(currentUserId);
+    if (role === 'ADMIN' || role === 'MODERATOR') {
+      return {};
+    }
+    if (!currentUserId) {
+      return { moderationStatus: ModerationStatus.APPROVED };
+    }
+    return {
+      OR: [
+        { moderationStatus: ModerationStatus.APPROVED },
+        { authorId: currentUserId, moderationStatus: ModerationStatus.PENDING },
+      ],
+    };
+  }
 
   async create(authorId: string, dto: CreatePostDto): Promise<Post> {
     const post = await this.prisma.post.create({
@@ -147,6 +175,23 @@ export class PostsService {
       throw new NotFoundException('Post not found');
     }
 
+    const userRole = await this.getUserRole(currentUserId);
+    const isAdmin = userRole === 'ADMIN' || userRole === 'MODERATOR';
+    const isAuthor = currentUserId === post.authorId;
+
+    if (!isAdmin) {
+      if (post.moderationStatus === 'PENDING') {
+        if (!isAuthor) {
+          throw new NotFoundException('Post not found');
+        }
+      } else if (
+        post.moderationStatus === 'FLAGGED' ||
+        post.moderationStatus === 'REJECTED'
+      ) {
+        throw new NotFoundException('Post not found');
+      }
+    }
+
     let isLiked = false;
     let isBookmarked = false;
     let isReposted = false;
@@ -186,6 +231,7 @@ export class PostsService {
       isLiked,
       isBookmarked,
       isReposted,
+      moderationStatus: post.moderationStatus,
     };
   }
 
@@ -213,10 +259,13 @@ export class PostsService {
 
     const authorIds = [currentUserId, ...followed.map((f) => f.followingId)];
 
+    const moderationFilter = await this.getPostModerationFilter(currentUserId);
+
     // Fetch posts using cursor-based pagination
     const posts = await this.prisma.post.findMany({
       where: {
         authorId: { in: authorIds },
+        ...moderationFilter,
       },
       orderBy: {
         createdAt: 'desc',
@@ -282,6 +331,7 @@ export class PostsService {
           isLiked: !!like,
           isBookmarked: !!bookmark,
           isReposted: !!repost,
+          moderationStatus: post.moderationStatus,
         };
       }),
     );
@@ -474,9 +524,29 @@ export class PostsService {
       throw new NotFoundException(`User @${username} not found`);
     }
 
+    const role = await this.getUserRole(currentUserId);
+    const isAdmin = role === 'ADMIN' || role === 'MODERATOR';
+    const isOwner = currentUserId === user.id;
+
+    let moderationFilter: Prisma.PostWhereInput = {};
+    if (!isAdmin) {
+      if (isOwner) {
+        moderationFilter = {
+          moderationStatus: {
+            in: [ModerationStatus.APPROVED, ModerationStatus.PENDING],
+          },
+        };
+      } else {
+        moderationFilter = {
+          moderationStatus: ModerationStatus.APPROVED,
+        };
+      }
+    }
+
     const posts = await this.prisma.post.findMany({
       where: {
         authorId: user.id,
+        ...moderationFilter,
       },
       orderBy: {
         createdAt: 'desc',
@@ -551,6 +621,7 @@ export class PostsService {
           isLiked,
           isBookmarked,
           isReposted,
+          moderationStatus: post.moderationStatus,
         };
       }),
     );
@@ -577,9 +648,12 @@ export class PostsService {
       throw new NotFoundException(`User @${username} not found`);
     }
 
+    const postFilter = await this.getPostModerationFilter(currentUserId);
+
     const reposts = await this.prisma.repost.findMany({
       where: {
         userId: user.id,
+        post: postFilter,
       },
       orderBy: {
         createdAt: 'desc',
@@ -659,6 +733,7 @@ export class PostsService {
           isLiked,
           isBookmarked,
           isReposted,
+          moderationStatus: post.moderationStatus,
         };
       }),
     );
@@ -689,9 +764,12 @@ export class PostsService {
       throw new ForbiddenException('You can only view your own saved posts');
     }
 
+    const postFilter = await this.getPostModerationFilter(currentUserId);
+
     const bookmarks = await this.prisma.bookmark.findMany({
       where: {
         userId: user.id,
+        post: postFilter,
       },
       orderBy: {
         createdAt: 'desc',
@@ -771,6 +849,7 @@ export class PostsService {
           isLiked,
           isBookmarked,
           isReposted,
+          moderationStatus: post.moderationStatus,
         };
       }),
     );

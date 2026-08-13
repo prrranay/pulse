@@ -55,6 +55,7 @@ export interface PostResponse {
   isLiked: boolean;
   isBookmarked: boolean;
   isReposted: boolean;
+  moderationStatus?: 'PENDING' | 'APPROVED' | 'FLAGGED' | 'REJECTED';
 }
 
 export interface ReplyResponse {
@@ -62,6 +63,7 @@ export interface ReplyResponse {
   content: string;
   createdAt: string;
   author: AuthorSummary;
+  moderationStatus?: 'PENDING' | 'APPROVED' | 'FLAGGED' | 'REJECTED';
 }
 
 export interface CommentResponse {
@@ -70,6 +72,7 @@ export interface CommentResponse {
   createdAt: string;
   author: AuthorSummary;
   replies: ReplyResponse[];
+  moderationStatus?: 'PENDING' | 'APPROVED' | 'FLAGGED' | 'REJECTED';
 }
 
 export interface SearchResultsResponse {

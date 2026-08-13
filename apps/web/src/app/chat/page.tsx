@@ -44,6 +44,7 @@ interface Message {
   content: string;
   createdAt: string;
   sender: ChatUser;
+  readAt?: string | null;
 }
 
 interface MessagesResponse {
@@ -408,7 +409,7 @@ export default function ChatPage() {
               <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-900 bg-slate-950 px-4">
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => setActiveConvId(null)}
+                    onClick={() => router.push('/chat')}
                     className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all md:hidden"
                   >
                     <ArrowLeft className="h-5 w-5" />

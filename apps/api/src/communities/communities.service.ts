@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCommunityDto } from './dto/communities.dto';
-import { Community, CommunityRole } from '@prisma/client';
+import {
+  Community,
+  CommunityRole,
+  ModerationStatus,
+  Prisma,
+} from '@prisma/client';
 import { PostResponse } from '../posts/posts.service';
 
 export interface CommunityDetailsResponse {
@@ -23,6 +28,33 @@ export interface CommunityDetailsResponse {
 @Injectable()
 export class CommunitiesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async getUserRole(userId?: string): Promise<string | undefined> {
+    if (!userId) return undefined;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role;
+  }
+
+  private async getPostModerationFilter(
+    currentUserId?: string,
+  ): Promise<Prisma.PostWhereInput> {
+    const role = await this.getUserRole(currentUserId);
+    if (role === 'ADMIN' || role === 'MODERATOR') {
+      return {};
+    }
+    if (!currentUserId) {
+      return { moderationStatus: ModerationStatus.APPROVED };
+    }
+    return {
+      OR: [
+        { moderationStatus: ModerationStatus.APPROVED },
+        { authorId: currentUserId, moderationStatus: ModerationStatus.PENDING },
+      ],
+    };
+  }
 
   async create(ownerId: string, dto: CreateCommunityDto): Promise<Community> {
     const existing = await this.prisma.community.findUnique({
@@ -173,8 +205,13 @@ export class CommunitiesService {
       throw new NotFoundException('Community not found');
     }
 
+    const postFilter = await this.getPostModerationFilter(currentUserId);
+
     const posts = await this.prisma.post.findMany({
-      where: { communityId },
+      where: {
+        communityId,
+        ...postFilter,
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         author: true,
@@ -235,6 +272,7 @@ export class CommunitiesService {
           isLiked,
           isBookmarked,
           isReposted,
+          moderationStatus: post.moderationStatus,
         };
       }),
     );

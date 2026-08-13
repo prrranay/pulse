@@ -151,6 +151,11 @@ export default function CommentSection({ postId }: { postId: string }) {
                           day: 'numeric',
                         })}
                       </span>
+                      {comment.moderationStatus === 'PENDING' && (
+                        <span className="ml-1 inline-flex items-center rounded bg-amber-500/10 px-1 py-0.5 text-[8px] font-medium text-amber-500 border border-amber-500/20">
+                          Under Review
+                        </span>
+                      )}
                     </div>
 
                     {currentUser && (
@@ -246,6 +251,11 @@ export default function CommentSection({ postId }: { postId: string }) {
                         day: 'numeric',
                       })}
                     </span>
+                    {reply.moderationStatus === 'PENDING' && (
+                      <span className="ml-1 inline-flex items-center rounded bg-amber-500/10 px-1 py-0.5 text-[8px] font-medium text-amber-500 border border-amber-500/20">
+                        Under Review
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-300">{reply.content}</p>
                 </div>

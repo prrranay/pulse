@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Headers,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -14,10 +15,14 @@ import { CreateCommentDto, CommentQueryDto } from './dto/comments.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { RateLimit } from '../common/decorators/rate-limit.decorator';
+import { JwtService } from '@nestjs/jwt';
 
 @Controller()
 export class CommentsController {
-  constructor(private readonly commentsService: CommentsService) {}
+  constructor(
+    private readonly commentsService: CommentsService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   @Post('posts/:id/comments')
   @UseGuards(JwtAuthGuard)
@@ -35,8 +40,24 @@ export class CommentsController {
   async getComments(
     @Param('id') postId: string,
     @Query() query: CommentQueryDto,
+    @Headers('authorization') authHeader?: string,
   ) {
-    return this.commentsService.getComments(postId, query);
+    let currentUserId: string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.split(' ')[1];
+        const payload: unknown = this.jwtService.decode(token);
+        if (payload && typeof payload === 'object') {
+          currentUserId = (payload as Record<string, any>).sub as
+            string | undefined;
+        }
+      } catch {
+        // Silently treat as anonymous
+      }
+    }
+
+    return this.commentsService.getComments(postId, query, currentUserId);
   }
 
   @Post('comments/:id/replies')

@@ -10,7 +10,25 @@ import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const isDev = process.env.NODE_ENV !== 'production';
+      if (!origin) {
+        if (isDev) {
+          callback(null, true);
+        } else {
+          callback(new Error('Origin required in production'));
+        }
+      } else if (origin === allowedOrigin) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
   },
   namespace: 'notifications',
 })
@@ -27,9 +45,7 @@ export class NotificationsGateway
   async handleConnection(client: Socket) {
     try {
       const auth = client.handshake.auth as Record<string, unknown> | undefined;
-      const query = client.handshake.query as
-        Record<string, unknown> | undefined;
-      const token = (auth?.token || query?.token) as string | undefined;
+      const token = auth?.token as string | undefined;
 
       if (!token) {
         this.logger.warn(`Client connection rejected: No token provided.`);
@@ -50,6 +66,9 @@ export class NotificationsGateway
         client.disconnect(true);
         return;
       }
+
+      // Store authenticated user ID
+      client.data = { userId };
 
       // Join client to their user room
       await client.join(`user_${userId}`);

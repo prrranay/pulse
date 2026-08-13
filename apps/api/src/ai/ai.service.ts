@@ -199,14 +199,15 @@ Decision (APPROVED, FLAGGED, or REJECTED):`;
     text: string,
   ): 'APPROVED' | 'FLAGGED' | 'REJECTED' {
     const blacklist = ['offensive', 'hack', 'malware', 'abuse'];
-    const lower = text.toLowerCase();
 
     const containsViolatingContent = blacklist.some((keyword) =>
-      lower.includes(keyword),
+      new RegExp(`\\b${keyword}\\b`, 'i').test(text),
     );
     if (containsViolatingContent) {
       // Moderate severity keyword match is FLAGGED, extreme spam is REJECTED
-      if (lower.includes('offensive') || lower.includes('hack')) {
+      const hasOffensive = new RegExp('\\boffensive\\b', 'i').test(text);
+      const hasHack = new RegExp('\\bhack\\b', 'i').test(text);
+      if (hasOffensive || hasHack) {
         return 'REJECTED';
       }
       return 'FLAGGED';

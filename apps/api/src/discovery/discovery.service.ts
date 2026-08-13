@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PostResponse } from '../posts/posts.service';
-import { Post, User } from '@prisma/client';
+import { Post, User, ModerationStatus, Prisma } from '@prisma/client';
 
 export interface SearchResultsResponse {
   users: Array<{
@@ -39,6 +39,33 @@ export interface ExploreDataResponse {
 export class DiscoveryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async getUserRole(userId?: string): Promise<string | undefined> {
+    if (!userId) return undefined;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role;
+  }
+
+  private async getPostModerationFilter(
+    currentUserId?: string,
+  ): Promise<Prisma.PostWhereInput> {
+    const role = await this.getUserRole(currentUserId);
+    if (role === 'ADMIN' || role === 'MODERATOR') {
+      return {};
+    }
+    if (!currentUserId) {
+      return { moderationStatus: ModerationStatus.APPROVED };
+    }
+    return {
+      OR: [
+        { moderationStatus: ModerationStatus.APPROVED },
+        { authorId: currentUserId, moderationStatus: ModerationStatus.PENDING },
+      ],
+    };
+  }
+
   async searchAll(
     q: string,
     currentUserId?: string,
@@ -47,6 +74,8 @@ export class DiscoveryService {
     if (!query) {
       return { users: [], posts: [], communities: [] };
     }
+
+    const postFilter = await this.getPostModerationFilter(currentUserId);
 
     const [users, posts, communities] = await Promise.all([
       this.prisma.user.findMany({
@@ -67,6 +96,7 @@ export class DiscoveryService {
       this.prisma.post.findMany({
         where: {
           content: { contains: query, mode: 'insensitive' },
+          ...postFilter,
         },
         orderBy: { createdAt: 'desc' },
         take: 20,
@@ -113,6 +143,8 @@ export class DiscoveryService {
   }
 
   async getExploreData(currentUserId?: string): Promise<ExploreDataResponse> {
+    const postFilter = await this.getPostModerationFilter(currentUserId);
+
     // 1. Trending Posts (Past 7 days, sorted by gravity score)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -120,6 +152,7 @@ export class DiscoveryService {
     const candidatePosts = await this.prisma.post.findMany({
       where: {
         createdAt: { gte: sevenDaysAgo },
+        ...postFilter,
       },
       include: {
         author: true,
@@ -166,6 +199,7 @@ export class DiscoveryService {
 
     // 2. Recent Posts
     const recentPostsList = await this.prisma.post.findMany({
+      where: postFilter,
       orderBy: { createdAt: 'desc' },
       take: 10,
       include: {
@@ -296,6 +330,7 @@ export class DiscoveryService {
           isLiked,
           isBookmarked,
           isReposted,
+          moderationStatus: post.moderationStatus,
         };
       }),
     );

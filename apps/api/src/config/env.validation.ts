@@ -19,4 +19,7 @@ export const envValidationSchema = Joi.object({
 
   // AI
   GEMINI_API_KEY: Joi.string().optional(),
+
+  // CORS
+  FRONTEND_URL: Joi.string().default('http://localhost:3000'),
 });

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChatGateway } from './chat.gateway';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -112,41 +113,30 @@ export class ChatService {
       throw new ForbiddenException('You cannot chat with yourself');
     }
 
-    // Check if conversation already exists
-    const existingParticipation =
-      await this.prisma.conversationParticipant.findFirst({
-        where: {
-          userId,
-          conversation: {
-            participants: {
-              some: { userId: targetUser.id },
-            },
-          },
-        },
-        include: {
-          conversation: {
-            include: {
-              participants: {
-                where: { userId: { not: userId } },
-                include: { user: true },
-              },
-              messages: {
-                orderBy: { createdAt: 'desc' },
-                take: 1,
-              },
-            },
-          },
-        },
-      });
+    const directKey = [userId, targetUser.id].sort().join(':');
 
-    if (existingParticipation) {
-      const conv = existingParticipation.conversation;
-      const otherPartUser = conv.participants[0]?.user;
-      const lastMsg = conv.messages[0];
+    // Attempt to find existing conversation by directKey
+    const existingConv = await this.prisma.conversation.findUnique({
+      where: { directKey },
+      include: {
+        participants: {
+          where: { userId: { not: userId } },
+          include: { user: true },
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (existingConv) {
+      const otherPartUser = existingConv.participants[0]?.user;
+      const lastMsg = existingConv.messages[0];
 
       return {
-        id: conv.id,
-        updatedAt: conv.updatedAt,
+        id: existingConv.id,
+        updatedAt: existingConv.updatedAt,
         otherParticipant: {
           id: otherPartUser.id,
           username: otherPartUser.username,
@@ -164,34 +154,80 @@ export class ChatService {
       };
     }
 
-    // Create new conversation
-    const newConv = await this.prisma.conversation.create({
-      data: {
-        participants: {
-          create: [{ userId }, { userId: targetUser.id }],
+    try {
+      // Create new conversation
+      const newConv = await this.prisma.conversation.create({
+        data: {
+          directKey,
+          participants: {
+            create: [{ userId }, { userId: targetUser.id }],
+          },
         },
-      },
-      include: {
-        participants: {
-          where: { userId: { not: userId } },
-          include: { user: true },
+        include: {
+          participants: {
+            where: { userId: { not: userId } },
+            include: { user: true },
+          },
         },
-      },
-    });
+      });
 
-    const otherPartUser = newConv.participants[0]?.user;
+      const otherPartUser = newConv.participants[0]?.user;
 
-    return {
-      id: newConv.id,
-      updatedAt: newConv.updatedAt,
-      otherParticipant: {
-        id: otherPartUser.id,
-        username: otherPartUser.username,
-        displayName: otherPartUser.displayName,
-        avatarUrl: otherPartUser.avatarUrl,
-      },
-      lastMessage: null,
-    };
+      return {
+        id: newConv.id,
+        updatedAt: newConv.updatedAt,
+        otherParticipant: {
+          id: otherPartUser.id,
+          username: otherPartUser.username,
+          displayName: otherPartUser.displayName,
+          avatarUrl: otherPartUser.avatarUrl,
+        },
+        lastMessage: null,
+      };
+    } catch (error) {
+      // Handle unique constraint races gracefully
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const raceConv = await this.prisma.conversation.findUniqueOrThrow({
+          where: { directKey },
+          include: {
+            participants: {
+              where: { userId: { not: userId } },
+              include: { user: true },
+            },
+            messages: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        });
+
+        const otherPartUser = raceConv.participants[0]?.user;
+        const lastMsg = raceConv.messages[0];
+
+        return {
+          id: raceConv.id,
+          updatedAt: raceConv.updatedAt,
+          otherParticipant: {
+            id: otherPartUser.id,
+            username: otherPartUser.username,
+            displayName: otherPartUser.displayName,
+            avatarUrl: otherPartUser.avatarUrl,
+          },
+          lastMessage: lastMsg
+            ? {
+                content: lastMsg.content,
+                createdAt: lastMsg.createdAt,
+                senderId: lastMsg.senderId,
+                readAt: lastMsg.readAt,
+              }
+            : null,
+        };
+      }
+      throw error;
+    }
   }
 
   async getMessages(
@@ -261,7 +297,10 @@ export class ChatService {
         });
 
       for (const p of otherParticipants) {
-        this.chatGateway.sendReadReceipt(p.userId, { conversationId, readAt });
+        this.chatGateway.sendReadReceipt(p.userId, conversationId, {
+          conversationId,
+          readAt,
+        });
       }
 
       // Notify current user's background socket of their new unread count
@@ -376,7 +415,7 @@ export class ChatService {
 
     // Emit event to all other participants
     for (const p of otherParticipants) {
-      this.chatGateway.sendMessage(p.userId, responseMsg);
+      this.chatGateway.sendMessage(p.userId, conversationId, responseMsg);
       // Notify recipient's background socket of the new unread count
       this.getUnreadCount(p.userId)
         .then((countRes) => {
@@ -442,7 +481,10 @@ export class ChatService {
         });
 
       for (const p of otherParticipants) {
-        this.chatGateway.sendReadReceipt(p.userId, { conversationId, readAt });
+        this.chatGateway.sendReadReceipt(p.userId, conversationId, {
+          conversationId,
+          readAt,
+        });
       }
 
       // Notify current user's background socket of their new unread count
