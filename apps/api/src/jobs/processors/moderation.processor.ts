@@ -28,19 +28,22 @@ export class ModerationProcessor {
     );
 
     try {
-      // Evaluate content via Gemini Flash safety classifier
-      const statusResult = await this.aiService.moderateContent(content);
+      // Evaluate content via Gemini safety classifier
+      const { status: outcomeStatus, reason } =
+        await this.aiService.moderateContent(content);
       this.logger.log(
-        `[Moderation Job Query] Gemini Flash safety outcome: ${statusResult}`,
+        `[Moderation Job Query] Gemini safety outcome: ${outcomeStatus} (Reason: ${reason})`,
       );
 
       // Map safety status to Prisma enum
       let status: ModerationStatus = ModerationStatus.APPROVED;
-      if (statusResult === 'FLAGGED') {
+      if (outcomeStatus === 'FLAGGED') {
         status = ModerationStatus.FLAGGED;
-      } else if (statusResult === 'REJECTED') {
+      } else if (outcomeStatus === 'REJECTED') {
         status = ModerationStatus.REJECTED;
       }
+
+      const moderatedAt = new Date();
 
       // Update database status and prepend warning banner if flagged
       if (type === 'POST') {
@@ -57,6 +60,8 @@ export class ModerationProcessor {
             where: { id: targetId },
             data: {
               moderationStatus: status,
+              moderationReason: reason,
+              moderatedAt,
               content: updatedContent,
             },
           });
@@ -75,6 +80,8 @@ export class ModerationProcessor {
             where: { id: targetId },
             data: {
               moderationStatus: status,
+              moderationReason: reason,
+              moderatedAt,
               content: updatedContent,
             },
           });
@@ -84,7 +91,7 @@ export class ModerationProcessor {
       this.logger.log(
         `[Moderation Job Success] ${type} ID ${targetId} processed. Status set to: ${status}`,
       );
-      return { status, targetId };
+      return { status, targetId, reason };
     } catch (err: unknown) {
       const error = err as Error;
       this.logger.error(

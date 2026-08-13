@@ -10,6 +10,8 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ForbiddenException } from '@nestjs/common';
 import { User } from '@prisma/client';
 
+import { RedisService } from '../redis/redis.service';
+
 describe('ChatService - Direct Conversations Integration', () => {
   let chatService: ChatService;
   let prisma: PrismaService;
@@ -29,6 +31,11 @@ describe('ChatService - Direct Conversations Integration', () => {
       emit: jest.fn(),
     },
   };
+  const mockRedisService = {
+    getClient: jest.fn().mockReturnValue({
+      scard: jest.fn().mockResolvedValue(0),
+    }),
+  };
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -37,6 +44,7 @@ describe('ChatService - Direct Conversations Integration', () => {
         PrismaService,
         { provide: ChatGateway, useValue: mockChatGateway },
         { provide: NotificationsGateway, useValue: mockNotificationsGateway },
+        { provide: RedisService, useValue: mockRedisService },
       ],
     }).compile();
 

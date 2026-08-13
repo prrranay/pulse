@@ -40,6 +40,7 @@ export interface AuthorSummary {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
+  isOnline?: boolean;
 }
 
 export interface PostResponse {

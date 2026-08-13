@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery, InfiniteData } from '@tanstack/react-query';
 import { io, Socket } from 'socket.io-client';
 import { apiClient } from '../../lib/api-client';
 import { useAuth } from '../../hooks/auth-context';
@@ -25,6 +25,7 @@ interface ChatUser {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
+  isOnline?: boolean;
 }
 
 interface Conversation {
@@ -67,6 +68,15 @@ function ChatPageContent() {
 
   const [typedMessage, setTypedMessage] = useState('');
   const socketRef = useRef<Socket | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isTypingRef = useRef(false);
+
+  const [prevActiveConvId, setPrevActiveConvId] = useState<string | null>(activeConvId);
+  if (activeConvId !== prevActiveConvId) {
+    setPrevActiveConvId(activeConvId);
+    setTypingUsers({});
+  }
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -136,16 +146,16 @@ function ChatPageContent() {
           console.error('Failed to mark incoming message as read:', err);
         });
 
-        queryClient.setQueryData(
+        queryClient.setQueryData<InfiniteData<ApiResponse<MessagesResponse>>>(
           ['chat-messages', currentActiveId],
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (oldData: any) => {
+          (oldData) => {
             if (!oldData) return oldData;
             return {
               ...oldData,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              pages: oldData.pages.map((page: any, index: number) => {
+              pages: oldData.pages.map((page, index) => {
                 if (index === 0) {
+                  const exists = page.data.items.some((msg) => msg.id === incomingMsg.id);
+                  if (exists) return page;
                   return {
                     ...page,
                     data: {
@@ -201,9 +211,41 @@ function ChatPageContent() {
       queryClient.invalidateQueries({ queryKey: ['chat-conversations'] });
     });
 
+    newSocket.on('user_typing', ({ conversationId, userId, isTyping }: { conversationId: string; userId: string; isTyping: boolean }) => {
+      const currentActiveId = activeConvIdRef.current;
+      if (conversationId === currentActiveId) {
+        setTypingUsers((prev) => ({ ...prev, [userId]: isTyping }));
+      }
+    });
+
+    newSocket.on('user_presence', ({ userId, status }: { userId: string; status: 'online' | 'offline' }) => {
+      queryClient.setQueryData<ApiResponse<Conversation[]>>(
+        ['chat-conversations'],
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            data: oldData.data.map((conv) => {
+              if (conv.otherParticipant.id === userId) {
+                return {
+                  ...conv,
+                  otherParticipant: {
+                    ...conv.otherParticipant,
+                    isOnline: status === 'online',
+                  },
+                };
+              }
+              return conv;
+            }),
+          };
+        }
+      );
+    });
+
     socketRef.current = newSocket;
 
     return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       newSocket.disconnect();
     };
   }, [currentUser, queryClient]);
@@ -248,17 +290,22 @@ function ChatPageContent() {
       const sentMsg = res.data;
       setTypedMessage('');
 
+      // Clear typing timeout
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      isTypingRef.current = false;
+      socketRef.current?.emit('typing', { conversationId: activeConvId, isTyping: false });
+
       // Add to React Query cache immediately
-      queryClient.setQueryData(
+      queryClient.setQueryData<InfiniteData<ApiResponse<MessagesResponse>>>(
         ['chat-messages', activeConvId],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (oldData: any) => {
+        (oldData) => {
           if (!oldData) return oldData;
           return {
             ...oldData,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            pages: oldData.pages.map((page: any, index: number) => {
+            pages: oldData.pages.map((page, index) => {
               if (index === 0) {
+                const exists = page.data.items.some((msg) => msg.id === sentMsg.id);
+                if (exists) return page;
                 return {
                   ...page,
                   data: {
@@ -278,6 +325,23 @@ function ChatPageContent() {
       setTimeout(scrollToBottom, 50);
     },
   });
+
+  const handleInputChange = (val: string) => {
+    setTypedMessage(val);
+    if (!socketRef.current || !activeConvId) return;
+
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      socketRef.current.emit('typing', { conversationId: activeConvId, isTyping: true });
+    }
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    typingTimeoutRef.current = setTimeout(() => {
+      isTypingRef.current = false;
+      socketRef.current?.emit('typing', { conversationId: activeConvId, isTyping: false });
+    }, 2000);
+  };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -351,17 +415,22 @@ function ChatPageContent() {
                     }`}
                   >
                     {/* Avatar */}
-                    <div className="h-10 w-10 shrink-0 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center border border-indigo-500/10">
-                      {otherUser.avatarUrl ? (
-                        <img
-                          src={otherUser.avatarUrl}
-                          alt={otherUser.username}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-xs font-bold uppercase text-slate-600">
-                          {otherUser.username.slice(0, 2)}
-                        </span>
+                    <div className="relative shrink-0">
+                      <div className="h-10 w-10 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center border border-indigo-500/10">
+                        {otherUser.avatarUrl ? (
+                          <img
+                            src={otherUser.avatarUrl}
+                            alt={otherUser.username}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs font-bold uppercase text-slate-600">
+                            {otherUser.username.slice(0, 2)}
+                          </span>
+                        )}
+                      </div>
+                      {otherUser.isOnline && (
+                        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-slate-950" />
                       )}
                     </div>
 
@@ -415,24 +484,34 @@ function ChatPageContent() {
                     <ArrowLeft className="h-5 w-5" />
                   </button>
 
-                  <div className="h-9 w-9 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center border border-indigo-500/10">
-                    {activeConversation.otherParticipant.avatarUrl ? (
-                      <img
-                        src={activeConversation.otherParticipant.avatarUrl}
-                        alt={activeConversation.otherParticipant.username}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-xs font-bold uppercase text-slate-600">
-                        {activeConversation.otherParticipant.username.slice(0, 2)}
-                      </span>
+                  <div className="relative">
+                    <div className="h-9 w-9 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center border border-indigo-500/10">
+                      {activeConversation.otherParticipant.avatarUrl ? (
+                        <img
+                          src={activeConversation.otherParticipant.avatarUrl}
+                          alt={activeConversation.otherParticipant.username}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-xs font-bold uppercase text-slate-600">
+                          {activeConversation.otherParticipant.username.slice(0, 2)}
+                        </span>
+                      )}
+                    </div>
+                    {activeConversation.otherParticipant.isOnline && (
+                      <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-500 border border-slate-950" />
                     )}
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-slate-200">
-                      {activeConversation.otherParticipant.displayName ||
-                        activeConversation.otherParticipant.username}
-                    </h3>
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-xs font-bold text-slate-200">
+                        {activeConversation.otherParticipant.displayName ||
+                          activeConversation.otherParticipant.username}
+                      </h3>
+                      {typingUsers[activeConversation.otherParticipant.id] && (
+                        <span className="text-[9px] text-indigo-400 font-medium animate-pulse">typing...</span>
+                      )}
+                    </div>
                     <p className="text-[9px] text-slate-500">
                       @{activeConversation.otherParticipant.username}
                     </p>
@@ -525,7 +604,7 @@ function ChatPageContent() {
                   <input
                     type="text"
                     value={typedMessage}
-                    onChange={(e) => setTypedMessage(e.target.value)}
+                    onChange={(e) => handleInputChange(e.target.value)}
                     placeholder={`Message @${activeConversation.otherParticipant.username}...`}
                     className="flex-1 rounded-full border border-slate-900 bg-slate-900/40 px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-indigo-500/40 transition-all"
                   />

@@ -9,6 +9,8 @@ import { ChatGateway } from './chat.gateway';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { FeedQueryDto } from '../posts/dto/posts.dto';
 
+import { RedisService } from '../redis/redis.service';
+
 export interface MessageResponse {
   id: string;
   conversationId: string;
@@ -32,6 +34,7 @@ export interface ConversationResponse {
     username: string;
     displayName: string | null;
     avatarUrl: string | null;
+    isOnline?: boolean;
   };
   lastMessage?: {
     content: string;
@@ -47,6 +50,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly chatGateway: ChatGateway,
     private readonly notificationsGateway: NotificationsGateway,
+    private readonly redisService: RedisService,
   ) {}
 
   async getConversations(userId: string): Promise<ConversationResponse[]> {
@@ -68,30 +72,37 @@ export class ChatService {
       },
     });
 
-    const list = participants.map((p) => {
-      const conv = p.conversation;
-      const otherPartUser = conv.participants[0]?.user;
-      const lastMsg = conv.messages[0];
+    const list = await Promise.all(
+      participants.map(async (p) => {
+        const conv = p.conversation;
+        const otherPartUser = conv.participants[0]?.user;
+        const lastMsg = conv.messages[0];
 
-      return {
-        id: conv.id,
-        updatedAt: conv.updatedAt,
-        otherParticipant: {
-          id: otherPartUser.id,
-          username: otherPartUser.username,
-          displayName: otherPartUser.displayName,
-          avatarUrl: otherPartUser.avatarUrl,
-        },
-        lastMessage: lastMsg
-          ? {
-              content: lastMsg.content,
-              createdAt: lastMsg.createdAt,
-              senderId: lastMsg.senderId,
-              readAt: lastMsg.readAt,
-            }
-          : null,
-      };
-    });
+        const onlineKey = `online:user:${otherPartUser.id}`;
+        const isOnline =
+          (await this.redisService.getClient().scard(onlineKey)) > 0;
+
+        return {
+          id: conv.id,
+          updatedAt: conv.updatedAt,
+          otherParticipant: {
+            id: otherPartUser.id,
+            username: otherPartUser.username,
+            displayName: otherPartUser.displayName,
+            avatarUrl: otherPartUser.avatarUrl,
+            isOnline,
+          },
+          lastMessage: lastMsg
+            ? {
+                content: lastMsg.content,
+                createdAt: lastMsg.createdAt,
+                senderId: lastMsg.senderId,
+                readAt: lastMsg.readAt,
+              }
+            : null,
+        };
+      }),
+    );
 
     // Sort by updatedAt desc
     return list.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
@@ -134,6 +145,10 @@ export class ChatService {
       const otherPartUser = existingConv.participants[0]?.user;
       const lastMsg = existingConv.messages[0];
 
+      const onlineKey = `online:user:${otherPartUser.id}`;
+      const isOnline =
+        (await this.redisService.getClient().scard(onlineKey)) > 0;
+
       return {
         id: existingConv.id,
         updatedAt: existingConv.updatedAt,
@@ -142,6 +157,7 @@ export class ChatService {
           username: otherPartUser.username,
           displayName: otherPartUser.displayName,
           avatarUrl: otherPartUser.avatarUrl,
+          isOnline,
         },
         lastMessage: lastMsg
           ? {
@@ -173,6 +189,10 @@ export class ChatService {
 
       const otherPartUser = newConv.participants[0]?.user;
 
+      const onlineKey = `online:user:${otherPartUser.id}`;
+      const isOnline =
+        (await this.redisService.getClient().scard(onlineKey)) > 0;
+
       return {
         id: newConv.id,
         updatedAt: newConv.updatedAt,
@@ -181,6 +201,7 @@ export class ChatService {
           username: otherPartUser.username,
           displayName: otherPartUser.displayName,
           avatarUrl: otherPartUser.avatarUrl,
+          isOnline,
         },
         lastMessage: null,
       };
@@ -207,6 +228,10 @@ export class ChatService {
         const otherPartUser = raceConv.participants[0]?.user;
         const lastMsg = raceConv.messages[0];
 
+        const onlineKey = `online:user:${otherPartUser.id}`;
+        const isOnline =
+          (await this.redisService.getClient().scard(onlineKey)) > 0;
+
         return {
           id: raceConv.id,
           updatedAt: raceConv.updatedAt,
@@ -215,6 +240,7 @@ export class ChatService {
             username: otherPartUser.username,
             displayName: otherPartUser.displayName,
             avatarUrl: otherPartUser.avatarUrl,
+            isOnline,
           },
           lastMessage: lastMsg
             ? {

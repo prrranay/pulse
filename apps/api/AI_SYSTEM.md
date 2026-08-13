@@ -7,40 +7,39 @@ This document explains the integration, prompts, logic boundaries, and safety la
 ## 1. Why AI is Used
 
 AI is integrated to augment the developer user experience and ensure safety without introducing high-latency blockers:
-1. **AI Post Assistant**: Refines drafts directly inside the text editor. Assists developers in adjusting tones (e.g. professional networking, short concise updates, or engaging threads).
+1. **AI Post Assistant**: Assists developers in adjusting tones of drafts inside the text editor (e.g. professional networking, short concise updates, or engaging threads).
 2. **AI Content Moderation**: Analyzes newly created posts and comments asynchronously via background queues to detect toxicity, slurs, hacks, and spam.
 
 ---
 
-## 2. AI Heuristics & Scopes
+## 2. Model Configuration & Security
 
-### AI-Assisted Actions
-- **Tonal Adaptations**: User drafts are sent to the AI with specific tone constraints. The AI output replaces the draft in-place.
-- **Safety Pre-Check**: Checks content toxicity scoring across categories (toxic, slurs, cyber hacks).
-
-### Manually Validated Actions (Admin Review)
-- Moderated posts receive status states in the database (`PENDING`, `APPROVED`, `FLAGGED`, or `REJECTED`).
-- If flagged or rejected:
-  - The status is persisted.
-  - A warning banner is prefixed to the text: `[FLAGGED - SENSITIVE CONTENT]`.
-  - Admins can query the database status or content and manually override states to restore or remove content permanently.
+- **Dynamic Model Name**: The system uses the `GEMINI_MODEL` environment variable (validated via NestJS configuration validation schema) to specify the model to use (defaulting to `gemini-1.5-flash` for local development).
+- **Backend API Isolation**: The Gemini API key (`GEMINI_API_KEY`) is stored securely in backend environment variables and is never exposed to Next.js client-side code, `NEXT_PUBLIC_` variables, or source control.
 
 ---
 
-## 3. High Availability & Fallback Policies
+## 3. High Availability & Failure Behavior
 
 AI is an auxiliary feature and **never blocks core application flow**:
 
 ### Timeout Guard
-- Every API call to Google Gemini 1.5 Flash has a strict **5-second timeout** managed via `AbortController`. If the API hangs, the request is canceled immediately to protect resources.
+- Every API call to the Gemini REST API has a strict **5-second timeout** managed via `AbortController`. If the API hangs, the request is canceled immediately to protect resources.
 
-### API Down Fallback logic
-If the Google Gemini REST API is down, returns an error status, or the `GEMINI_API_KEY` is not defined:
-1. **Writing Assistant**:
-   - Falls back to simple deterministic text adjustments:
-     - `concise`: Truncates draft to 80 characters.
-     - `professional`: Prefixes content with `"Hello network, I wanted to share this update..."`.
-     - `engaging`: Prefixes content with `"🔥 Check this out! "` and appends `"🚀 #developers #pulse"`.
-2. **Safety Moderation**:
-   - Falls back to a local keyword-blacklist regex scan (`spam`, `malware`, `offensive`, `abuse`, `hack`).
-   - Flagged matches transition the post status to `FLAGGED` or `REJECTED` deterministically.
+### AI-Assisted Writing Failure Behavior
+- If the Gemini API is down, missing, or times out, the system returns a controlled `503 Service Unavailable` error response to the user instead of displaying mock/local placeholder values. This ensures that the user is informed of the temporary provider failure.
+
+### Moderation Failure Behavior
+- If Gemini moderation fails (due to provider issues, timeout, or missing key), the system falls back to a deterministic **Local Blacklist keyword check** (`spam`, `malware`, `offensive`, `abuse`, `hack`).
+- The post or comment status transitions to an explicit status (`FLAGGED`, `REJECTED`, or `APPROVED`) with a clear database log indicating the provider failure fallback.
+
+---
+
+## 4. Moderation Persistence
+
+Each post or comment moderated stores the following data:
+- **moderationStatus**: `PENDING`, `APPROVED`, `FLAGGED`, or `REJECTED`.
+- **moderationReason**: A detailed reason describing the outcome (e.g. `"Gemini AI Safety Check: Content approved"` or `"Local Blacklist Check: Fallback executed due to provider error"`).
+- **moderatedAt**: A timestamp recording exactly when the moderation check was completed.
+
+Only posts with a status of `APPROVED` are displayed in the general public feeds.

@@ -12,6 +12,8 @@ import { JwtService } from '@nestjs/jwt';
 import { Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+import { RedisService } from '../redis/redis.service';
+
 @WebSocketGateway({
   cors: {
     origin: (
@@ -45,6 +47,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly redisService: RedisService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -87,6 +90,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           this.logger.error('Failed to update lastActiveAt on connect:', err);
         });
 
+      // Track Redis presence
+      const onlineKey = `online:user:${userId}`;
+      const activeSocketsBefore = await this.redisService
+        .getClient()
+        .scard(onlineKey);
+      await this.redisService.getClient().sadd(onlineKey, client.id);
+
       // Join client to their user room
       await client.join(`user_${userId}`);
 
@@ -101,6 +111,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         await client.join(`conversation:${pc.conversationId}`);
       }
 
+      if (activeSocketsBefore === 0) {
+        // User came online! Broadcast presence.
+        this.broadcastPresence(userId, 'online').catch((err: unknown) => {
+          this.logger.error(
+            `Failed to broadcast online presence for ${userId}:`,
+            err,
+          );
+        });
+      }
+
       this.logger.log(
         `Chat client ${client.id} authenticated, joined room user_${userId} and ${participantConvs.length} conversation rooms`,
       );
@@ -113,8 +133,57 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     this.logger.log(`Chat client disconnected: ${client.id}`);
+    const userId = (client.data as { userId?: string })?.userId;
+    if (userId) {
+      try {
+        const onlineKey = `online:user:${userId}`;
+        await this.redisService.getClient().srem(onlineKey, client.id);
+        const activeSocketsAfter = await this.redisService
+          .getClient()
+          .scard(onlineKey);
+
+        if (activeSocketsAfter === 0) {
+          // User went offline! Broadcast presence.
+          await this.broadcastPresence(userId, 'offline');
+        }
+      } catch (err: unknown) {
+        this.logger.error(
+          `Failed to track disconnect presence for ${userId}:`,
+          err,
+        );
+      }
+    }
+  }
+
+  private async broadcastPresence(
+    userId: string,
+    status: 'online' | 'offline',
+  ) {
+    if (!this.server) return;
+
+    try {
+      const participantConvs =
+        await this.prisma.conversationParticipant.findMany({
+          where: { userId },
+          select: { conversationId: true },
+        });
+
+      for (const pc of participantConvs) {
+        this.server
+          .to(`conversation:${pc.conversationId}`)
+          .emit('user_presence', {
+            userId,
+            status,
+          });
+      }
+    } catch (err: unknown) {
+      this.logger.error(
+        `Failed to query conversation rooms for presence broadcast of ${userId}:`,
+        err,
+      );
+    }
   }
 
   @SubscribeMessage('joinConversation')
@@ -204,6 +273,49 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(
       `Emitted messages_read to conversation:${conversationId} and user_${recipientId}`,
     );
+  }
+
+  @SubscribeMessage('typing')
+  async handleTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string; isTyping: boolean },
+  ) {
+    const userId = (client.data as { userId?: string })?.userId;
+    if (!userId) {
+      client.emit('error', 'Unauthorized');
+      return;
+    }
+
+    const { conversationId, isTyping } = payload;
+    if (!conversationId) {
+      client.emit('error', 'Conversation ID required');
+      return;
+    }
+
+    try {
+      const participant = await this.prisma.conversationParticipant.findUnique({
+        where: {
+          conversationId_userId: {
+            conversationId,
+            userId,
+          },
+        },
+      });
+
+      if (!participant) {
+        client.emit('error', 'Access denied');
+        return;
+      }
+
+      client.to(`conversation:${conversationId}`).emit('user_typing', {
+        conversationId,
+        userId,
+        isTyping,
+      });
+    } catch (err: unknown) {
+      const error = err as Error;
+      this.logger.error(`Error handling typing event: ${error.message}`);
+    }
   }
 }
 export type { Socket };

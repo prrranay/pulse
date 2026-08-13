@@ -1,13 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly apiKey?: string;
+  private readonly modelName: string;
 
   constructor(private readonly configService: ConfigService) {
     this.apiKey = this.configService.get<string>('GEMINI_API_KEY');
+    this.modelName =
+      this.configService.get<string>('GEMINI_MODEL') || 'gemini-1.5-flash';
     if (!this.apiKey) {
       this.logger.warn(
         'GEMINI_API_KEY environment variable is not defined. Falling back to mock/local models.',
@@ -16,7 +23,8 @@ export class AiService {
   }
 
   /**
-   * Refines draft text using Gemini Flash, with timeout and error fallback.
+   * Refines draft text using Gemini, with timeout and error handling.
+   * Throws ServiceUnavailableException if Gemini is not configured or fails.
    */
   async refineText(
     text: string,
@@ -37,15 +45,15 @@ export class AiService {
     const promptText = prompts[tone] || prompts.improve;
 
     if (!this.apiKey) {
-      this.logger.log(
-        `[AI Refine Fallback] API key missing. Running local fallback for tone "${tone}".`,
+      this.logger.error('[AI Refine Failed] Gemini API key is missing.');
+      throw new ServiceUnavailableException(
+        'AI text refinement is not configured.',
       );
-      return this.localRefineFallback(trimmedText, tone);
     }
 
     try {
       this.logger.log(
-        `[AI Refine Request] Sending content to Gemini Flash for tone "${tone}".`,
+        `[AI Refine Request] Sending content to Gemini for tone "${tone}" using model "${this.modelName}".`,
       );
       const result = await this.callGeminiApi(promptText);
       if (result) {
@@ -54,22 +62,25 @@ export class AiService {
       throw new Error('Empty response from Gemini');
     } catch (err: unknown) {
       const error = err as Error;
-      this.logger.error(
-        `[AI Refine Failed] Call failed: ${error.message}. Triggering local fallback.`,
+      this.logger.error(`[AI Refine Failed] Call failed: ${error.message}`);
+      throw new ServiceUnavailableException(
+        'AI text refinement is currently unavailable.',
       );
-      return this.localRefineFallback(trimmedText, tone);
     }
   }
 
   /**
-   * Moderates post or comment content using Gemini Flash, returning PENDING, APPROVED, FLAGGED, or REJECTED.
+   * Moderates post or comment content using Gemini, returning structured status and reason.
    */
   async moderateContent(
     content: string,
-  ): Promise<'APPROVED' | 'FLAGGED' | 'REJECTED'> {
+  ): Promise<{ status: 'APPROVED' | 'FLAGGED' | 'REJECTED'; reason: string }> {
     const trimmed = content.trim();
     if (!trimmed) {
-      return 'APPROVED';
+      return {
+        status: 'APPROVED',
+        reason: 'Content is empty',
+      };
     }
 
     const moderationPrompt = `You are an AI safety moderator for a technical developer social network called Pulse.
@@ -88,30 +99,44 @@ Decision (APPROVED, FLAGGED, or REJECTED):`;
       this.logger.log(
         '[AI Moderation Fallback] API key missing. Running local rule-based safety checks.',
       );
-      return this.localModerationFallback(trimmed);
+      const fallbackStatus = this.localModerationFallback(trimmed);
+      return {
+        status: fallbackStatus,
+        reason: `Local Blacklist Check: Detected keyword matches (Fallback status: ${fallbackStatus})`,
+      };
     }
 
     try {
       this.logger.log(
-        '[AI Moderation Request] Running safety checks via Gemini Flash.',
+        `[AI Moderation Request] Running safety checks via Gemini model "${this.modelName}".`,
       );
       const result = await this.callGeminiApi(moderationPrompt);
       const cleanResult = result.trim().toUpperCase();
 
       if (['APPROVED', 'FLAGGED', 'REJECTED'].includes(cleanResult)) {
-        return cleanResult as 'APPROVED' | 'FLAGGED' | 'REJECTED';
+        return {
+          status: cleanResult as 'APPROVED' | 'FLAGGED' | 'REJECTED',
+          reason: `Gemini AI Safety Check: Content classified as ${cleanResult}`,
+        };
       }
 
       this.logger.warn(
         `[AI Moderation Query] Unexpected response value: ${cleanResult}. Defaulting to FLAGGED.`,
       );
-      return 'FLAGGED';
+      return {
+        status: 'FLAGGED',
+        reason: `Gemini AI Safety Check: Unexpected response format (${cleanResult})`,
+      };
     } catch (err: unknown) {
       const error = err as Error;
       this.logger.error(
         `[AI Moderation Failed] Safety check error: ${error.message}. Falling back to local rules.`,
       );
-      return this.localModerationFallback(trimmed);
+      const fallbackStatus = this.localModerationFallback(trimmed);
+      return {
+        status: fallbackStatus,
+        reason: `Local Blacklist Check: Fallback executed due to provider error (${error.message})`,
+      };
     }
   }
 
@@ -119,7 +144,7 @@ Decision (APPROVED, FLAGGED, or REJECTED):`;
    * Helper calling Google Generative AI REST API with a 5-second timeout guard.
    */
   private async callGeminiApi(promptText: string): Promise<string> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent?key=${this.apiKey}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 seconds timeout
@@ -169,26 +194,6 @@ Decision (APPROVED, FLAGGED, or REJECTED):`;
     } catch (err: unknown) {
       clearTimeout(timeoutId);
       throw err;
-    }
-  }
-
-  /**
-   * Fallback rule-based refinement if API is down or missing key.
-   */
-  private localRefineFallback(text: string, tone: string): string {
-    switch (tone) {
-      case 'concise':
-        // Trim down text to max 80 characters
-        return text.length > 80 ? `${text.slice(0, 77)}...` : text;
-      case 'professional':
-        // Standard professional prefix
-        return `Hello network, I wanted to share this update: ${text}`;
-      case 'engaging':
-        // Add excitement emojis/indicators
-        return `🔥 Check this out! ${text} 🚀 #developers #pulse`;
-      default:
-        // 'improve'
-        return text;
     }
   }
 
