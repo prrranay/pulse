@@ -167,23 +167,13 @@ export class DiscoveryService {
       },
     });
 
-    const now = new Date().getTime();
     const scoredPosts = candidatePosts.map((post) => {
       const likes = post._count.likes;
       const comments = post._count.comments;
       const reposts = post._count.reposts;
 
-      const timeElapsedHours = Math.max(
-        0.1,
-        (now - new Date(post.createdAt).getTime()) / (1000 * 60 * 60),
-      );
-
-      // Ranking Formula (Hacker News type gravity-based decay formula):
-      // score = (likes * 2 + comments * 3 + reposts * 4) / ((hours_elapsed + 2) ^ 1.5)
-      // Note: This is a deterministic gravity-based time-decay ranking algorithm, NOT an ML-based model.
-      const score =
-        (likes * 2 + comments * 3 + reposts * 4) /
-        Math.pow(timeElapsedHours + 2, 1.5);
+      // Pure engagement ranking to display most active posts in the Trending tab
+      const score = likes * 2 + comments * 3 + reposts * 4;
 
       return { post, score };
     });
@@ -274,6 +264,61 @@ export class DiscoveryService {
       })),
       recentPosts,
     };
+  }
+
+  async getTrendingHashtags(): Promise<{ tag: string; count: number }[]> {
+    const posts = await this.prisma.post.findMany({
+      where: { moderationStatus: 'APPROVED' },
+      select: { content: true },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    const tagCounts: Record<string, number> = {};
+    const hashtagRegex = /#\w+/g;
+
+    for (const post of posts) {
+      const matches = post.content.match(hashtagRegex);
+      if (matches) {
+        const uniqueTags = Array.from(
+          new Set(matches.map((t) => t.toLowerCase())),
+        );
+        for (const tag of uniqueTags) {
+          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        }
+      }
+    }
+
+    let results = Object.entries(tagCounts)
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // Fallback if there are fewer than 3 actual hashtags
+    if (results.length < 3) {
+      const fallbacks = [
+        '#nextjs',
+        '#typescript',
+        '#redis',
+        '#prisma',
+        '#nestJS',
+        '#ai',
+      ];
+      for (const fallback of fallbacks) {
+        const keyword = fallback.slice(1);
+        const count = await this.prisma.post.count({
+          where: {
+            content: { contains: keyword, mode: 'insensitive' },
+            moderationStatus: 'APPROVED',
+          },
+        });
+        if (count > 0 && !tagCounts[fallback]) {
+          results.push({ tag: fallback, count });
+        }
+      }
+      results = results.sort((a, b) => b.count - a.count);
+    }
+
+    return results.slice(0, 5);
   }
 
   private async enrichPosts(

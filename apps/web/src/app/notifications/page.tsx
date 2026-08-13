@@ -159,30 +159,21 @@ export default function NotificationsPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-      {/* Header */}
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/')}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <h2 className="text-sm font-bold text-slate-100">Notifications</h2>
-        </div>
-
-        {allNotifications.some((n) => !n.readAt) && (
-          <button
-            onClick={() => markAllReadMutation.mutate()}
-            disabled={markAllReadMutation.isPending}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900/50 hover:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all disabled:opacity-50"
-          >
-            <CheckCheck className="h-3.5 w-3.5" /> Mark all as read
-          </button>
-        )}
-      </header>
-
       <div className="mx-auto max-w-xl px-4 py-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent">
+            Notifications
+          </h1>
+          {allNotifications.some((n) => !n.readAt) && (
+            <button
+              onClick={() => markAllReadMutation.mutate()}
+              disabled={markAllReadMutation.isPending}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900/50 hover:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all disabled:opacity-50"
+            >
+              <CheckCheck className="h-3.5 w-3.5" /> Mark all as read
+            </button>
+          )}
+        </div>
         {/* Loading History */}
         {isLoading && (
           <div className="flex justify-center py-12">

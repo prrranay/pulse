@@ -4,6 +4,7 @@ import './globals.css';
 import QueryProvider from '../components/query-provider';
 import { AuthProvider } from '../hooks/auth-context';
 import { SocketProvider } from '../hooks/socket-context';
+import Navbar from '../components/navbar';
 import { ReactNode } from 'react';
 
 const geistSans = Geist({
@@ -44,7 +45,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
         <QueryProvider>
           <AuthProvider>
-            <SocketProvider>{children}</SocketProvider>
+            <SocketProvider>
+              <Navbar />
+              {children}
+            </SocketProvider>
           </AuthProvider>
         </QueryProvider>
       </body>

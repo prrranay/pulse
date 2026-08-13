@@ -360,22 +360,7 @@ function ChatPageContent() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-slate-950 text-slate-100">
-      {/* Navbar Header */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-900 bg-slate-950/80 px-4 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/')}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <span className="bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-lg font-black tracking-wider text-transparent">
-            Conversations
-          </span>
-        </div>
-      </header>
-
+    <div className="flex h-[calc(100vh-57px)] flex-col bg-slate-950 text-slate-100">
       {/* Main Container */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Side Pane: Conversations List */}

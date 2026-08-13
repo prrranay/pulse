@@ -81,17 +81,6 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-      {/* Settings Navigation Header */}
-      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-        <button
-          onClick={() => router.push('/')}
-          className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <h2 className="text-sm font-bold text-slate-100">Settings</h2>
-      </header>
-
       <main className="mx-auto max-w-2xl px-4 py-8 space-y-8">
         <div>
           <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent">

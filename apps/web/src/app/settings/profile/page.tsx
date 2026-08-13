@@ -126,17 +126,6 @@ export default function EditProfilePage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-      {/* Top Header */}
-      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-        <button
-          onClick={() => router.push(`/${user.username}`)}
-          className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <h2 className="text-sm font-bold text-slate-100">Edit Profile</h2>
-      </header>
-
       <div className="mx-auto max-w-xl px-4 py-8">
         {/* Profile Card Preview */}
         <div className="mb-8 rounded-2xl border border-slate-900 bg-slate-900/20 p-6 backdrop-blur-xl">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useAuth } from '../hooks/auth-context';
 import { apiClient } from '../lib/api-client';
 import { PostResponse, ApiResponse } from '../types';
@@ -41,6 +41,13 @@ export default function HomePage() {
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage.data.nextCursor,
     enabled: !!user, // Feed is private/guarded by API
+  });
+
+  // 1.5 Fetch Real Trends
+  const { data: trendsRes } = useQuery<ApiResponse<{ tag: string; count: number }[]>>({
+    queryKey: ['trends'],
+    queryFn: () => apiClient.get<ApiResponse<{ tag: string; count: number }[]>>('/discovery/trends'),
+    enabled: !!user,
   });
 
   // 2. Setup IntersectionObserver for Infinite Scrolling
@@ -112,37 +119,8 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      {/* Top Navbar */}
-      <header className="sticky top-0 z-10 border-b border-slate-900 bg-slate-950/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
-          <Link
-            href="/"
-            className="bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-xl font-black tracking-wider text-transparent"
-          >
-            Pulse
-          </Link>
-
-          <div className="flex items-center gap-4">
-            <ChatBadge />
-            <NotificationBell />
-            <Link
-              href={`/${user.username}`}
-              className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all"
-            >
-              @{user.username}
-            </Link>
-            <button
-              onClick={logout}
-              className="rounded-lg border border-slate-900 bg-slate-900/50 hover:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
-
       {/* Main Grid Layout */}
-      <main className="mx-auto max-w-4xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-4 md:px-8 py-6">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           {/* Main Feed Column */}
           <div className="md:col-span-2 space-y-6">
@@ -191,8 +169,8 @@ export default function HomePage() {
             {hasNextPage && <div ref={sentinelRef} className="h-10" />}
           </div>
 
-          {/* Sidebar Widgets Column */}
-          <div className="hidden md:block space-y-6">
+          {/* Sidebar Widgets Column (Sticky) */}
+          <div className="hidden md:block space-y-6 sticky top-20 self-start">
             {/* Quick Profile widget */}
             <div className="rounded-xl border border-slate-900 bg-slate-900/25 p-5 backdrop-blur-md">
               <div className="flex items-center gap-3">
@@ -224,46 +202,31 @@ export default function HomePage() {
               </Link>
             </div>
 
-            {/* Pulse Trends widgets */}
+            {/* Pulse Trends widgets (Dynamic) */}
             <div className="rounded-xl border border-slate-900 bg-slate-900/25 p-5 backdrop-blur-md space-y-4">
               <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
                 <Flame className="h-4 w-4 text-orange-500" /> Pulse Trends
               </h3>
 
               <div className="space-y-3 text-xs">
-                <div
-                  onClick={() => router.push('/explore?q=nextjs15')}
-                  className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5 hover:border-indigo-500/30 transition-all cursor-pointer"
-                >
-                  <span className="font-bold text-indigo-400 hover:underline">
-                    #nextjs15
-                  </span>
-                  <p className="mt-0.5 text-[10px] text-slate-500">
-                    84 developers posting
-                  </p>
-                </div>
-                <div
-                  onClick={() => router.push('/explore?q=typescript')}
-                  className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5 hover:border-indigo-500/30 transition-all cursor-pointer"
-                >
-                  <span className="font-bold text-indigo-400 hover:underline">
-                    #typescript
-                  </span>
-                  <p className="mt-0.5 text-[10px] text-slate-500">
-                    142 developers posting
-                  </p>
-                </div>
-                <div
-                  onClick={() => router.push('/explore?q=prisma')}
-                  className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5 hover:border-indigo-500/30 transition-all cursor-pointer"
-                >
-                  <span className="font-bold text-indigo-400 hover:underline">
-                    #prisma
-                  </span>
-                  <p className="mt-0.5 text-[10px] text-slate-500">
-                    32 developers posting
-                  </p>
-                </div>
+                {trendsRes?.data && trendsRes.data.length > 0 ? (
+                  trendsRes.data.map((item) => (
+                    <div
+                      key={item.tag}
+                      onClick={() => router.push(`/explore?q=${encodeURIComponent(item.tag.slice(1))}`)}
+                      className="rounded-lg border border-slate-900 bg-slate-950/40 p-2.5 hover:border-indigo-500/30 transition-all cursor-pointer"
+                    >
+                      <span className="font-bold text-indigo-400 hover:underline">
+                        {item.tag}
+                      </span>
+                      <p className="mt-0.5 text-[10px] text-slate-500">
+                        {item.count} {item.count === 1 ? 'developer' : 'developers'} posting
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[10px] text-slate-500 italic">No trends available</p>
+                )}
               </div>
             </div>
           </div>

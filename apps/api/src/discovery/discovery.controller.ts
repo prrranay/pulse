@@ -15,6 +15,11 @@ export class DiscoveryController {
     return this.discoveryService.getExploreData(currentUserId);
   }
 
+  @Get('trends')
+  async getTrends() {
+    return this.discoveryService.getTrendingHashtags();
+  }
+
   @Get('search')
   async search(
     @Query('q') q: string,

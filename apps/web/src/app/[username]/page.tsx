@@ -281,42 +281,11 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-      {/* Top Navigation Header */}
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.back()}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div>
-            <h2 className="text-sm font-bold text-slate-100">
-              {profile.displayName || profile.username}
-            </h2>
-            <p className="text-xs text-slate-500">{profile.postCount} posts</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {currentUser && (
-            <ChatBadge />
-          )}
-          {isOwnProfile && (
-            <button
-              onClick={() => router.push('/settings')}
-              className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-            >
-              <Settings className="h-5 w-5" />
-            </button>
-          )}
-        </div>
-      </header>
-
       {/* Decorative Banner Background */}
       <div className="h-32 w-full bg-gradient-to-r from-indigo-950 via-purple-950 to-slate-900" />
 
       {/* Main Profile Info */}
-      <div className="relative px-4">
+      <div className="relative mx-auto max-w-6xl px-4 md:px-8">
         {/* Avatar Placement */}
         <div className="absolute -top-12 left-4 h-24 w-24 rounded-full border-4 border-slate-950 bg-slate-900 overflow-hidden shadow-xl flex items-center justify-center">
           {profile.avatarUrl ? (

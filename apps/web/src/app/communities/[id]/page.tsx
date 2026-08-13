@@ -85,15 +85,6 @@ export default function CommunityDetailPage() {
   if (detailsLoading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-          <button
-            onClick={() => router.back()}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <h2 className="text-sm font-bold text-slate-100">Loading Community</h2>
-        </header>
         <div className="mx-auto max-w-2xl px-4 py-8">
           <PostSkeleton />
         </div>
@@ -120,22 +111,6 @@ export default function CommunityDetailPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-      {/* Header bar */}
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/explore')}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div>
-            <h2 className="text-sm font-bold text-slate-100">c/{community.name}</h2>
-            <p className="text-[10px] text-slate-500">{community.memberCount} members</p>
-          </div>
-        </div>
-      </header>
-
       {/* Hero Community Banner */}
       <div className="bg-gradient-to-r from-indigo-950 via-slate-950 to-purple-950 border-b border-slate-900 py-8 px-4">
         <div className="mx-auto max-w-2xl space-y-4">

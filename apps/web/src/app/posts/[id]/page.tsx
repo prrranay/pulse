@@ -30,18 +30,6 @@ export default function PostDetailPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.back()}
-              className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <h2 className="text-sm font-bold text-slate-100">Loading Post</h2>
-          </div>
-          <NotificationBell />
-        </header>
         <div className="mx-auto max-w-2xl px-4 py-8">
           <PostSkeleton />
         </div>
@@ -68,20 +56,6 @@ export default function PostDetailPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-      {/* Top Header */}
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.back()}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <h2 className="text-sm font-bold text-slate-100">Thread</h2>
-        </div>
-        <NotificationBell />
-      </header>
-
       <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
         {/* Main Post Card */}
         <PostCard post={post} />

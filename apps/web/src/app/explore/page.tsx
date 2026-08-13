@@ -97,16 +97,9 @@ function ExplorePageContent() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
-      {/* Search Header Bar */}
-      <header className="sticky top-0 z-10 border-b border-slate-900 bg-slate-950/80 px-4 py-3 backdrop-blur-md">
-        <div className="mx-auto max-w-4xl flex items-center gap-3">
-          <button
-            onClick={() => router.push('/')}
-            className="rounded-full p-2 text-slate-400 hover:bg-slate-900 hover:text-slate-100 transition-all"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-
+      {/* Main Grid content */}
+      <main className="mx-auto max-w-6xl px-4 md:px-8 py-6 space-y-6">
+        <div className="flex items-center gap-3">
           <form onSubmit={handleSearchSubmit} className="relative flex-1">
             <Search className="absolute top-2.5 left-3 h-4 w-4 text-slate-600" />
             <input
@@ -119,21 +112,14 @@ function ExplorePageContent() {
           </form>
 
           {user && (
-            <div className="flex items-center gap-3">
-              <ChatBadge />
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-1 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-indigo-500 shadow-md shrink-0"
-              >
-                <Plus className="h-3.5 w-3.5" /> Community
-              </button>
-            </div>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-1 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-indigo-500 shadow-md shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" /> Community
+            </button>
           )}
         </div>
-      </header>
-
-      {/* Main Grid content */}
-      <main className="mx-auto max-w-4xl px-4 py-6">
         {searchQuery.trim().length > 0 ? (
           // SEARCH RESULTS VIEW
           <div className="space-y-6">
@@ -320,8 +306,8 @@ function ExplorePageContent() {
               )}
             </div>
 
-            {/* Right sidebar widgets */}
-            <div className="space-y-6">
+            {/* Right sidebar widgets (Sticky) */}
+            <div className="space-y-6 sticky top-20 self-start">
               {/* Popular Communities widget */}
               {!exploreLoading && exploreData && (
                 <div className="rounded-xl border border-slate-900 bg-slate-900/10 p-5 backdrop-blur-md space-y-4">
@@ -329,7 +315,7 @@ function ExplorePageContent() {
                     <Users className="h-4 w-4 text-indigo-400" /> Communities
                   </h3>
                   <div className="space-y-3">
-                    {exploreData.popularCommunities.map((item) => (
+                    {exploreData.popularCommunities.slice(0, 3).map((item) => (
                       <div
                         key={item.id}
                         onClick={() => router.push(`/communities/${item.id}`)}
@@ -354,7 +340,7 @@ function ExplorePageContent() {
                     <Sparkles className="h-4 w-4 text-emerald-400" /> Who to follow
                   </h3>
                   <div className="space-y-3">
-                    {exploreData.suggestedUsers.map((item) => (
+                    {exploreData.suggestedUsers.slice(0, 3).map((item) => (
                       <div
                         key={item.id}
                         onClick={() => router.push(`/${item.username}`)}
