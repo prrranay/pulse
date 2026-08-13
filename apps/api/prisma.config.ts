@@ -8,6 +8,6 @@ export default defineConfig({
     seed: 'npx ts-node prisma/seed.ts',
   },
   datasource: {
-    url: env('DATABASE_URL'),
+    url: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/pulse_test',
   },
 });
