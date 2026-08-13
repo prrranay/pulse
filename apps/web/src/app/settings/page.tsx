@@ -158,7 +158,7 @@ export default function SettingsPage() {
 
             {user.role === 'ADMIN' && (
               <div
-                onClick={() => router.push('/admin')}
+                onClick={() => router.push('/admin-panel')}
                 className="flex items-center justify-between rounded-xl border border-slate-900 bg-slate-950/40 p-4 hover:border-slate-800 hover:bg-slate-900/10 transition-all cursor-pointer"
               >
                 <div className="flex items-center gap-3">

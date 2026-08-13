@@ -52,10 +52,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   const menuItems = [
-    { name: 'Overview', path: '/admin', icon: LayoutDashboard },
-    { name: 'Users', path: '/admin/users', icon: Users },
-    { name: 'Moderation', path: '/admin/moderation', icon: AlertTriangle },
-    { name: 'Analytics', path: '/admin/analytics', icon: BarChart3 },
+    { name: 'Overview', path: '/admin-panel', icon: LayoutDashboard },
+    { name: 'Users', path: '/admin-panel/users', icon: Users },
+    { name: 'Moderation', path: '/admin-panel/moderation', icon: AlertTriangle },
+    { name: 'Analytics', path: '/admin-panel/analytics', icon: BarChart3 },
   ];
 
   return (

@@ -117,7 +117,7 @@ async function main() {
   // 1. Create Admin
   const admin = await prisma.user.create({
     data: {
-      username: 'system_admin',
+      username: 'admin',
       email: 'admin@pulse.dev',
       password: hashedPassword,
       displayName: 'System Admin',

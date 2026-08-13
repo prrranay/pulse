@@ -25,7 +25,7 @@ export default function Navbar() {
           {/* Admin Dashboard toggle for privileged accounts */}
           {user.role === 'ADMIN' && (
             <Link
-              href="/admin"
+              href="/admin-panel"
               className="flex items-center gap-1.5 rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-2.5 py-1 text-xs font-bold text-indigo-400 hover:bg-indigo-500/10 transition-all mr-1 shrink-0"
             >
               <Shield className="h-3.5 w-3.5" /> Dashboard
