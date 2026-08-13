@@ -225,56 +225,63 @@ export class CommunitiesService {
       },
     });
 
-    return Promise.all(
-      posts.map(async (post) => {
-        let isLiked = false;
-        let isBookmarked = false;
-        let isReposted = false;
+    if (posts.length === 0) return [];
 
-        if (currentUserId) {
-          const [like, bookmark, repost] = await Promise.all([
-            this.prisma.like.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-            this.prisma.bookmark.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-            this.prisma.repost.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-          ]);
-          isLiked = !!like;
-          isBookmarked = !!bookmark;
-          isReposted = !!repost;
-        }
+    const postIds = posts.map((p) => p.id);
 
-        return {
-          id: post.id,
-          content: post.content,
-          imageUrl: post.imageUrl,
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt,
-          author: {
-            id: post.author.id,
-            username: post.author.username,
-            displayName: post.author.displayName,
-            avatarUrl: post.author.avatarUrl,
+    let likedSet = new Set<string>();
+    let bookmarkedSet = new Set<string>();
+    let repostedSet = new Set<string>();
+
+    if (currentUserId) {
+      const [likes, bookmarks, reposts] = await Promise.all([
+        this.prisma.like.findMany({
+          where: {
+            userId: currentUserId,
+            postId: { in: postIds },
           },
-          likesCount: post._count.likes,
-          commentsCount: post._count.comments,
-          repostsCount: post._count.reposts,
-          isLiked,
-          isBookmarked,
-          isReposted,
-          moderationStatus: post.moderationStatus,
-        };
-      }),
-    );
+          select: { postId: true },
+        }),
+        this.prisma.bookmark.findMany({
+          where: {
+            userId: currentUserId,
+            postId: { in: postIds },
+          },
+          select: { postId: true },
+        }),
+        this.prisma.repost.findMany({
+          where: {
+            userId: currentUserId,
+            postId: { in: postIds },
+          },
+          select: { postId: true },
+        }),
+      ]);
+
+      likedSet = new Set(likes.map((l) => l.postId));
+      bookmarkedSet = new Set(bookmarks.map((b) => b.postId));
+      repostedSet = new Set(reposts.map((r) => r.postId));
+    }
+
+    return posts.map((post) => ({
+      id: post.id,
+      content: post.content,
+      imageUrl: post.imageUrl,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+      author: {
+        id: post.author.id,
+        username: post.author.username,
+        displayName: post.author.displayName,
+        avatarUrl: post.author.avatarUrl,
+      },
+      likesCount: post._count.likes,
+      commentsCount: post._count.comments,
+      repostsCount: post._count.reposts,
+      isLiked: likedSet.has(post.id),
+      isBookmarked: bookmarkedSet.has(post.id),
+      isReposted: repostedSet.has(post.id),
+      moderationStatus: post.moderationStatus,
+    }));
   }
 }

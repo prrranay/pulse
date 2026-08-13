@@ -41,6 +41,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Your account has been suspended');
     }
 
+    const now = new Date();
+    const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+
+    if (!user.lastActiveAt || user.lastActiveAt < fifteenMinutesAgo) {
+      this.prisma.user
+        .update({
+          where: { id: user.id },
+          data: { lastActiveAt: now },
+        })
+        .catch((err: unknown) => {
+          console.error('Failed to update lastActiveAt in JwtStrategy:', err);
+        });
+
+      user.lastActiveAt = now;
+    }
+
     return user;
   }
 }

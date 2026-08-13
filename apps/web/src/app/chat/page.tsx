@@ -52,7 +52,7 @@ interface MessagesResponse {
   nextCursor: string | null;
 }
 
-export default function ChatPage() {
+function ChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user: currentUser, isLoading: authLoading } = useAuth();
@@ -551,5 +551,19 @@ export default function ChatPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+import { Suspense } from 'react';
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
+        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+      </div>
+    }>
+      <ChatPageContent />
+    </Suspense>
   );
 }

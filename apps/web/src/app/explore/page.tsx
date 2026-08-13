@@ -25,7 +25,7 @@ import {
 
 /* eslint-disable @next/next/no-img-element */
 
-export default function ExplorePage() {
+function ExplorePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -453,5 +453,20 @@ export default function ExplorePage() {
         </div>
       )}
     </div>
+  );
+}
+
+import { Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
+
+export default function ExplorePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
+        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+      </div>
+    }>
+      <ExplorePageContent />
+    </Suspense>
   );
 }

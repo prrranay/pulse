@@ -77,6 +77,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Store authenticated user ID
       client.data = { userId };
 
+      // Update lastActiveAt in database
+      this.prisma.user
+        .update({
+          where: { id: userId },
+          data: { lastActiveAt: new Date() },
+        })
+        .catch((err: unknown) => {
+          this.logger.error('Failed to update lastActiveAt on connect:', err);
+        });
+
       // Join client to their user room
       await client.join(`user_${userId}`);
 

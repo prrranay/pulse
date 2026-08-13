@@ -31,21 +31,27 @@ export class AdminService {
       totalPosts,
       totalComments,
       totalCommunities,
+      totalMessages,
       flaggedPosts,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({
         where: {
-          posts: {
-            some: {
-              createdAt: { gte: thirtyDaysAgo },
-            },
-          },
+          lastActiveAt: { gte: thirtyDaysAgo },
         },
       }),
-      this.prisma.post.count(),
-      this.prisma.comment.count(),
+      this.prisma.post.count({
+        where: {
+          moderationStatus: ModerationStatus.APPROVED,
+        },
+      }),
+      this.prisma.comment.count({
+        where: {
+          moderationStatus: ModerationStatus.APPROVED,
+        },
+      }),
       this.prisma.community.count(),
+      this.prisma.message.count(),
       this.prisma.post.count({
         where: {
           moderationStatus: {
@@ -61,7 +67,7 @@ export class AdminService {
       totalPosts,
       totalComments,
       totalCommunities,
-      totalMessages: 0, // Mock chat message count as chat module is not declared
+      totalMessages,
       flaggedPosts,
     };
   }
@@ -246,7 +252,10 @@ export class AdminService {
         select: { createdAt: true },
       }),
       this.prisma.post.findMany({
-        where: { createdAt: { gte: thirtyDaysAgo } },
+        where: {
+          createdAt: { gte: thirtyDaysAgo },
+          moderationStatus: { not: ModerationStatus.REJECTED },
+        },
         select: { createdAt: true },
       }),
     ]);

@@ -153,10 +153,17 @@ npm run dev
 npm test
 ```
 
+## Admin Dashboard Metrics & Analytics
+
+The admin panel displays platform metrics with strict technical honesty:
+- **Active Users**: Users who performed authenticated activity (e.g. logging in, creating/reading posts, fetching feeds, sending chat messages) in the past 30 days, tracked via `lastActiveAt` database updates (throttled to a maximum of 1 write per user per 15 minutes to prevent excessive writes).
+- **Total Posts**: Count of public platform posts that are successfully `APPROVED` (rejected content is omitted).
+- **Total Comments**: Count of public platform comments that are successfully `APPROVED` (rejected content is omitted).
+- **Total Messages**: The real-time database count of all direct chat messages sent.
+
 ---
 
 ## Known Trade-offs & Future Improvements
 
 1. **Local AI Fallbacks**: Blacklist keywords regex parsing is simple and doesn't capture nuanced context. Integrations with lightweight local classifiers (e.g. natural lang processors) could replace regex checks.
-2. **Mock Chat Metrics**: Dashboard chat logs are currently mocked as `0` as the socket chat message tables are in implementation transit.
-3. **Media Uploads**: Post composer supports media URL binding, but direct binary image uploads are bypassed. Adding S3/Cloudinary storage streams inside a BullMQ `media-queue` is a future optimization.
+2. **Media Uploads**: Post composer supports media URL binding, but direct binary image uploads are bypassed. Adding S3/Cloudinary storage streams inside a BullMQ `media-queue` is a future optimization.

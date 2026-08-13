@@ -99,16 +99,7 @@ export class PostsService {
       });
 
     // Invalidate user feed cache in Redis
-    try {
-      const keys = await this.redisService
-        .getClient()
-        .keys(`feed:user_${authorId}:*`);
-      if (keys.length > 0) {
-        await this.redisService.getClient().del(...keys);
-      }
-    } catch (err) {
-      console.error('Failed to invalidate feed cache keys:', err);
-    }
+    await this.invalidateUserFeedCache(authorId);
 
     return post;
   }
@@ -293,48 +284,7 @@ export class PostsService {
       nextCursor = lastItem ? lastItem.id : null;
     }
 
-    const enrichedItems = await Promise.all(
-      items.map(async (post) => {
-        const [like, bookmark, repost] = await Promise.all([
-          this.prisma.like.findUnique({
-            where: {
-              userId_postId: { userId: currentUserId, postId: post.id },
-            },
-          }),
-          this.prisma.bookmark.findUnique({
-            where: {
-              userId_postId: { userId: currentUserId, postId: post.id },
-            },
-          }),
-          this.prisma.repost.findUnique({
-            where: {
-              userId_postId: { userId: currentUserId, postId: post.id },
-            },
-          }),
-        ]);
-
-        return {
-          id: post.id,
-          content: post.content,
-          imageUrl: post.imageUrl,
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt,
-          author: {
-            id: post.author.id,
-            username: post.author.username,
-            displayName: post.author.displayName,
-            avatarUrl: post.author.avatarUrl,
-          },
-          likesCount: post._count.likes,
-          commentsCount: post._count.comments,
-          repostsCount: post._count.reposts,
-          isLiked: !!like,
-          isBookmarked: !!bookmark,
-          isReposted: !!repost,
-          moderationStatus: post.moderationStatus,
-        };
-      }),
-    );
+    const enrichedItems = await this.enrichPostResponses(items, currentUserId);
 
     const result = {
       items: enrichedItems,
@@ -352,9 +302,16 @@ export class PostsService {
 
   private async invalidateUserFeedCache(userId: string): Promise<void> {
     try {
-      const keys = await this.redisService
-        .getClient()
-        .keys(`feed:user_${userId}:*`);
+      const stream = this.redisService.getClient().scanStream({
+        match: `feed:user_${userId}:*`,
+        count: 100,
+      });
+
+      const keys: string[] = [];
+      for await (const resultKeys of stream) {
+        keys.push(...(resultKeys as string[]));
+      }
+
       if (keys.length > 0) {
         await this.redisService.getClient().del(...keys);
       }
@@ -364,6 +321,75 @@ export class PostsService {
         err,
       );
     }
+  }
+
+  private async enrichPostResponses(
+    posts: Array<
+      Post & {
+        author: User;
+        _count: { likes: number; comments: number; reposts: number };
+      }
+    >,
+    currentUserId?: string,
+  ): Promise<PostResponse[]> {
+    if (posts.length === 0) return [];
+
+    const postIds = posts.map((p) => p.id);
+
+    let likedSet = new Set<string>();
+    let bookmarkedSet = new Set<string>();
+    let repostedSet = new Set<string>();
+
+    if (currentUserId) {
+      const [likes, bookmarks, reposts] = await Promise.all([
+        this.prisma.like.findMany({
+          where: {
+            userId: currentUserId,
+            postId: { in: postIds },
+          },
+          select: { postId: true },
+        }),
+        this.prisma.bookmark.findMany({
+          where: {
+            userId: currentUserId,
+            postId: { in: postIds },
+          },
+          select: { postId: true },
+        }),
+        this.prisma.repost.findMany({
+          where: {
+            userId: currentUserId,
+            postId: { in: postIds },
+          },
+          select: { postId: true },
+        }),
+      ]);
+
+      likedSet = new Set(likes.map((l) => l.postId));
+      bookmarkedSet = new Set(bookmarks.map((b) => b.postId));
+      repostedSet = new Set(reposts.map((r) => r.postId));
+    }
+
+    return posts.map((post) => ({
+      id: post.id,
+      content: post.content,
+      imageUrl: post.imageUrl,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+      author: {
+        id: post.author.id,
+        username: post.author.username,
+        displayName: post.author.displayName,
+        avatarUrl: post.author.avatarUrl,
+      },
+      likesCount: post._count.likes,
+      commentsCount: post._count.comments,
+      repostsCount: post._count.reposts,
+      isLiked: likedSet.has(post.id),
+      isBookmarked: bookmarkedSet.has(post.id),
+      isReposted: repostedSet.has(post.id),
+      moderationStatus: post.moderationStatus,
+    }));
   }
 
   async like(userId: string, postId: string): Promise<{ message: string }> {
@@ -574,57 +600,7 @@ export class PostsService {
       nextCursor = lastItem ? lastItem.id : null;
     }
 
-    const enrichedItems = await Promise.all(
-      items.map(async (post) => {
-        let isLiked = false;
-        let isBookmarked = false;
-        let isReposted = false;
-
-        if (currentUserId) {
-          const [like, bookmark, repost] = await Promise.all([
-            this.prisma.like.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-            this.prisma.bookmark.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-            this.prisma.repost.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-          ]);
-          isLiked = !!like;
-          isBookmarked = !!bookmark;
-          isReposted = !!repost;
-        }
-
-        return {
-          id: post.id,
-          content: post.content,
-          imageUrl: post.imageUrl,
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt,
-          author: {
-            id: post.author.id,
-            username: post.author.username,
-            displayName: post.author.displayName,
-            avatarUrl: post.author.avatarUrl,
-          },
-          likesCount: post._count.likes,
-          commentsCount: post._count.comments,
-          repostsCount: post._count.reposts,
-          isLiked,
-          isBookmarked,
-          isReposted,
-          moderationStatus: post.moderationStatus,
-        };
-      }),
-    );
+    const enrichedItems = await this.enrichPostResponses(items, currentUserId);
 
     return {
       items: enrichedItems,
@@ -685,57 +661,10 @@ export class PostsService {
       nextCursor = lastItem ? lastItem.id : null;
     }
 
-    const enrichedItems = await Promise.all(
-      items.map(async (repost) => {
-        const post = repost.post;
-        let isLiked = false;
-        let isBookmarked = false;
-        let isReposted = false;
-
-        if (currentUserId) {
-          const [like, bookmark, rep] = await Promise.all([
-            this.prisma.like.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-            this.prisma.bookmark.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-            this.prisma.repost.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-          ]);
-          isLiked = !!like;
-          isBookmarked = !!bookmark;
-          isReposted = !!rep;
-        }
-
-        return {
-          id: post.id,
-          content: post.content,
-          imageUrl: post.imageUrl,
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt,
-          author: {
-            id: post.author.id,
-            username: post.author.username,
-            displayName: post.author.displayName,
-            avatarUrl: post.author.avatarUrl,
-          },
-          likesCount: post._count.likes,
-          commentsCount: post._count.comments,
-          repostsCount: post._count.reposts,
-          isLiked,
-          isBookmarked,
-          isReposted,
-          moderationStatus: post.moderationStatus,
-        };
-      }),
+    const mappedPosts = items.map((r) => r.post);
+    const enrichedItems = await this.enrichPostResponses(
+      mappedPosts,
+      currentUserId,
     );
 
     return {
@@ -801,57 +730,10 @@ export class PostsService {
       nextCursor = lastItem ? lastItem.id : null;
     }
 
-    const enrichedItems = await Promise.all(
-      items.map(async (bookmark) => {
-        const post = bookmark.post;
-        let isLiked = false;
-        let isBookmarked = false;
-        let isReposted = false;
-
-        if (currentUserId) {
-          const [like, book, rep] = await Promise.all([
-            this.prisma.like.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-            this.prisma.bookmark.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-            this.prisma.repost.findUnique({
-              where: {
-                userId_postId: { userId: currentUserId, postId: post.id },
-              },
-            }),
-          ]);
-          isLiked = !!like;
-          isBookmarked = !!book;
-          isReposted = !!rep;
-        }
-
-        return {
-          id: post.id,
-          content: post.content,
-          imageUrl: post.imageUrl,
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt,
-          author: {
-            id: post.author.id,
-            username: post.author.username,
-            displayName: post.author.displayName,
-            avatarUrl: post.author.avatarUrl,
-          },
-          likesCount: post._count.likes,
-          commentsCount: post._count.comments,
-          repostsCount: post._count.reposts,
-          isLiked,
-          isBookmarked,
-          isReposted,
-          moderationStatus: post.moderationStatus,
-        };
-      }),
+    const mappedPosts = items.map((b) => b.post);
+    const enrichedItems = await this.enrichPostResponses(
+      mappedPosts,
+      currentUserId,
     );
 
     return {

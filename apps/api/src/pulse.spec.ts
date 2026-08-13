@@ -87,7 +87,11 @@ describe('Pulse Integration Spec Suite', () => {
     set: jest.fn(),
     del: jest.fn(),
     getClient: jest.fn(() => ({
-      keys: jest.fn(() => Promise.resolve([])),
+      scanStream: jest.fn(() => ({
+        [Symbol.asyncIterator]: function* () {
+          yield [];
+        },
+      })),
       del: jest.fn(() => Promise.resolve(0)),
     })),
   };
