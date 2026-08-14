@@ -4,7 +4,7 @@ This document outlines the architecture, database schema, configuration, account
 
 ---
 
-## 1. Architecture Overview
+## 1. Architecture Overview 
 Google Sign-In is integrated as an alternative authentication method that yields a standard Pulse JWT session.
 
 ```mermaid
