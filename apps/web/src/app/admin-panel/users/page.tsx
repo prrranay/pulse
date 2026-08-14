@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
@@ -14,10 +14,7 @@ export default function AdminUsersPage() {
   const [searchVal, setSearchVal] = useState('');
   const [page, setPage] = useState(1);
 
-  // Reset page to 1 when search value changes
-  useEffect(() => {
-    setPage(1);
-  }, [searchVal]);
+
 
   // 1. Fetch Users
   const {
@@ -127,7 +124,10 @@ export default function AdminUsersPage() {
         <input
           type="text"
           value={searchVal}
-          onChange={(e) => setSearchVal(e.target.value)}
+          onChange={(e) => {
+            setSearchVal(e.target.value);
+            setPage(1);
+          }}
           placeholder="Search by username, display name, or email..."
           className="w-full rounded-lg border border-slate-900 bg-slate-900/40 py-2 pl-9 pr-4 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-indigo-500/40 transition-all"
         />

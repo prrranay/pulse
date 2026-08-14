@@ -66,8 +66,9 @@ export default function PostComposer({
       }
       onComplete?.();
     },
-    onError: (err: any) => {
-      setError(err?.message ?? 'Failed to save post. Please try again.');
+    onError: (err: unknown) => {
+      const errorObj = err as { message?: string } | null;
+      setError(errorObj?.message ?? 'Failed to save post. Please try again.');
     },
   });
 
@@ -80,9 +81,10 @@ export default function PostComposer({
       setRefiningTone(null);
       setError(null);
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       setRefiningTone(null);
-      setError(err?.message ?? 'AI refinement failed. Please try again.');
+      const errorObj = err as { message?: string } | null;
+      setError(errorObj?.message ?? 'AI refinement failed. Please try again.');
     },
   });
 

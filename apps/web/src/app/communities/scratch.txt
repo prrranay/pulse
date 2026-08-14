@@ -1,4 +1,4 @@
-'use client';
+npm run lint:web'use client';
 
 import { useParams, useRouter } from 'react-router-dom'; // Wait! Next.js does NOT use react-router-dom!
 // In Next.js we must use `useParams` from `next/navigation` and `useRouter` from `next/navigation`!
