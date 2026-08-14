@@ -267,6 +267,7 @@ export class CommunitiesService {
       id: post.id,
       content: post.content,
       imageUrl: post.imageUrl,
+      imagePublicId: post.imagePublicId,
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
       author: {

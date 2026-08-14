@@ -2,7 +2,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUrl,
   IsInt,
   Min,
   Max,
@@ -15,8 +14,12 @@ export class CreatePostDto {
   content!: string;
 
   @IsOptional()
-  @IsUrl({}, { message: 'Please provide a valid URL for the image' })
+  @IsString()
   imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  imagePublicId?: string;
 
   @IsOptional()
   @IsString()
@@ -29,8 +32,12 @@ export class UpdatePostDto {
   content?: string;
 
   @IsOptional()
-  @IsUrl({}, { message: 'Please provide a valid URL for the image' })
+  @IsString()
   imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  imagePublicId?: string;
 }
 
 export class FeedQueryDto {

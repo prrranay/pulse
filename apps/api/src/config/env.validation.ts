@@ -27,4 +27,9 @@ export const envValidationSchema = Joi.object({
   // Google OAuth
   GOOGLE_CLIENT_ID: Joi.string().default('mock-client-id'),
   GOOGLE_CLIENT_SECRET: Joi.string().default('mock-client-secret'),
+
+  // Cloudinary
+  CLOUDINARY_CLOUD_NAME: Joi.string().default('mock-cloud-name'),
+  CLOUDINARY_API_KEY: Joi.string().default('mock-api-key'),
+  CLOUDINARY_API_SECRET: Joi.string().default('mock-api-secret'),
 });

@@ -56,6 +56,7 @@ export interface PostResponse {
   isLiked: boolean;
   isBookmarked: boolean;
   isReposted: boolean;
+  imagePublicId: string | null;
   moderationStatus?: 'PENDING' | 'APPROVED' | 'FLAGGED' | 'REJECTED';
 }
 

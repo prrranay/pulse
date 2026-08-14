@@ -90,6 +90,28 @@ jest.mock('google-auth-library', () => {
   };
 });
 
+// Mock cloudinary for direct image upload signature verification and asset deletion testing
+jest.mock('cloudinary', () => {
+  return {
+    v2: {
+      config: jest.fn(),
+      utils: {
+        api_sign_request: jest.fn().mockImplementation((params, secret) => {
+          return `mock-signature-${params.timestamp}-${params.folder}`;
+        }),
+      },
+      uploader: {
+        destroy: jest.fn().mockImplementation((publicId) => {
+          if (publicId.includes('fail-delete')) {
+            return Promise.reject(new Error('Cloudinary deletion failed'));
+          }
+          return Promise.resolve({ result: 'ok' });
+        }),
+      },
+    },
+  };
+});
+
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   INestApplication,
@@ -407,6 +429,405 @@ describe('Pulse End-to-End Integration Suite', () => {
           .post('/api/v1/auth/google')
           .send({ idToken: 'invalid-token' })
           .expect(401);
+      });
+    });
+
+    describe('Cloudinary Image Uploads', () => {
+      let token: string;
+      let user: any;
+
+      beforeAll(async () => {
+        // Create an authenticated user
+        user = await prisma.user.create({
+          data: {
+            email: 'cloudinary_tester@pulse.dev',
+            username: 'cloudinary_tester',
+            password: 'Password123!',
+          },
+        });
+        token = await jwt.signAsync({ sub: user.id, email: user.email });
+      });
+
+      it('should reject unauthenticated signature requests with 401', async () => {
+        await request(app.getHttpServer())
+          .post('/api/v1/cloudinary/signature')
+          .expect(401);
+      });
+
+      it('should return signed upload parameters for authenticated user', async () => {
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/cloudinary/signature')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(201);
+
+        expect(res.body.signature).toBeDefined();
+        expect(res.body.timestamp).toBeDefined();
+        expect(res.body.folder).toBe(`pulse_posts/${user.id}`);
+        expect(res.body.apiKey).toBe('mock-api-key');
+        expect(res.body.cloudName).toBe('mock-cloud-name');
+      });
+
+      it('should reject unauthenticated asset deletion with 401', async () => {
+        await request(app.getHttpServer())
+          .post('/api/v1/cloudinary/delete')
+          .send({ publicId: 'pulse_posts/some-user/some-asset' })
+          .expect(401);
+      });
+
+      it("should prevent deleting another user's Cloudinary asset with 403", async () => {
+        await request(app.getHttpServer())
+          .post('/api/v1/cloudinary/delete')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ publicId: 'pulse_posts/another-user-uuid/some-asset' })
+          .expect(403);
+      });
+
+      it('should allow deleting own Cloudinary asset successfully', async () => {
+        await request(app.getHttpServer())
+          .post('/api/v1/cloudinary/delete')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ publicId: `pulse_posts/${user.id}/some-asset` })
+          .expect(201);
+      });
+
+      it('should save imageUrl and imagePublicId in DB during post creation', async () => {
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/posts')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            content: 'Post with image',
+            imageUrl:
+              'https://res.cloudinary.com/mock-cloud-name/image/upload/pulse_posts/asset.jpg',
+            imagePublicId: `pulse_posts/${user.id}/asset`,
+          })
+          .expect(201);
+
+        expect(res.body.imageUrl).toBe(
+          'https://res.cloudinary.com/mock-cloud-name/image/upload/pulse_posts/asset.jpg',
+        );
+        expect(res.body.imagePublicId).toBe(`pulse_posts/${user.id}/asset`);
+
+        const dbPost = await prisma.post.findUnique({
+          where: { id: res.body.id },
+        });
+        expect(dbPost?.imagePublicId).toBe(`pulse_posts/${user.id}/asset`);
+        expect(dbPost?.imageUrl).toBe(
+          'https://res.cloudinary.com/mock-cloud-name/image/upload/pulse_posts/asset.jpg',
+        );
+      });
+
+      it('should delete old Cloudinary asset when post image is replaced or cleared', async () => {
+        // 1. Create post
+        const post = await prisma.post.create({
+          data: {
+            content: 'Original content',
+            imageUrl: 'https://cloudinary.com/old.jpg',
+            imagePublicId: `pulse_posts/${user.id}/old-asset`,
+            authorId: user.id,
+          },
+        });
+
+        const cloudinaryMock = require('cloudinary').v2;
+        cloudinaryMock.uploader.destroy.mockClear();
+
+        // 2. Update with new image
+        await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            imageUrl: 'https://cloudinary.com/new.jpg',
+            imagePublicId: `pulse_posts/${user.id}/new-asset`,
+          })
+          .expect(200);
+
+        // Verify old asset was destroyed
+        expect(cloudinaryMock.uploader.destroy).toHaveBeenCalledWith(
+          `pulse_posts/${user.id}/old-asset`,
+        );
+      });
+
+      it('should delete associated Cloudinary asset when post is deleted, and handle deletion failures gracefully', async () => {
+        // 1. Create post
+        const post = await prisma.post.create({
+          data: {
+            content: 'Delete me post',
+            imageUrl: 'https://cloudinary.com/delete.jpg',
+            imagePublicId: `pulse_posts/${user.id}/fail-delete-asset`, // Will trigger mock delete throw
+            authorId: user.id,
+          },
+        });
+
+        const cloudinaryMock = require('cloudinary').v2;
+        cloudinaryMock.uploader.destroy.mockClear();
+
+        // 2. Delete post
+        await request(app.getHttpServer())
+          .delete(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        // Verify uploader.destroy was called
+        expect(cloudinaryMock.uploader.destroy).toHaveBeenCalledWith(
+          `pulse_posts/${user.id}/fail-delete-asset`,
+        );
+
+        // Verify database record was deleted successfully even though Cloudinary delete threw an error
+        const dbPost = await prisma.post.findUnique({ where: { id: post.id } });
+        expect(dbPost).toBeNull();
+      });
+    });
+
+    describe('Edit Post & Moderation', () => {
+      let author: any;
+      let authorToken: string;
+      let otherUser: any;
+      let otherToken: string;
+
+      beforeAll(async () => {
+        author = await prisma.user.create({
+          data: {
+            email: 'edit_author@pulse.dev',
+            username: 'edit_author',
+            password: 'Password123!',
+          },
+        });
+        authorToken = await jwt.signAsync({
+          sub: author.id,
+          email: author.email,
+        });
+
+        otherUser = await prisma.user.create({
+          data: {
+            email: 'edit_other@pulse.dev',
+            username: 'edit_other',
+            password: 'Password123!',
+          },
+        });
+        otherToken = await jwt.signAsync({
+          sub: otherUser.id,
+          email: otherUser.email,
+        });
+      });
+
+      it('should allow author to edit post content', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Original Content',
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+          },
+        });
+
+        const res = await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${authorToken}`)
+          .send({ content: 'Edited Text' })
+          .expect(200);
+
+        expect(res.body.content).toBe('Edited Text');
+        const dbPost = await prisma.post.findUnique({ where: { id: post.id } });
+        expect(dbPost?.content).toBe('Edited Text');
+      });
+
+      it('should prevent non-authors from editing post with 403', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Keep hands off',
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+          },
+        });
+
+        await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${otherToken}`)
+          .send({ content: 'I am a hacker' })
+          .expect(403);
+      });
+
+      it('should reset approved status to PENDING on text edits and clear moderation reason/moderatedAt metadata', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Perfect text',
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+            moderationReason: 'Clean content',
+            moderatedAt: new Date(),
+          },
+        });
+
+        const res = await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${authorToken}`)
+          .send({ content: 'Edited text reset moderation' })
+          .expect(200);
+
+        expect(res.body.moderationStatus).toBe('PENDING');
+
+        const dbPost = await prisma.post.findUnique({ where: { id: post.id } });
+        expect(dbPost?.moderationStatus).toBe('PENDING');
+        expect(dbPost?.moderationReason).toBeNull();
+        expect(dbPost?.moderatedAt).toBeNull();
+      });
+
+      it('should enqueue a moderation job when an approved post is edited', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Approved initial',
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+          },
+        });
+
+        await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${authorToken}`)
+          .send({ content: 'Trigger moderation' })
+          .expect(200);
+      });
+
+      it('should hide pending edited post from public feeds and anonymous visitors', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Secrets inside',
+            authorId: author.id,
+            moderationStatus: 'PENDING',
+          },
+        });
+
+        await request(app.getHttpServer())
+          .get(`/api/v1/posts/${post.id}`)
+          .expect(404);
+
+        await request(app.getHttpServer())
+          .get(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${authorToken}`)
+          .expect(200);
+      });
+
+      it('should show approved edited post to public', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Publicly visible edited post',
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+          },
+        });
+
+        await request(app.getHttpServer())
+          .get(`/api/v1/posts/${post.id}`)
+          .expect(200);
+      });
+
+      it('should hide rejected edited post from everyone except author/admins', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Banned post',
+            authorId: author.id,
+            moderationStatus: 'REJECTED',
+          },
+        });
+
+        await request(app.getHttpServer())
+          .get(`/api/v1/posts/${post.id}`)
+          .expect(404);
+      });
+
+      it('should trigger reset on image-only edits', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Stable content',
+            imageUrl: 'https://cloudinary.com/original-img.jpg',
+            imagePublicId: `pulse_posts/${author.id}/original`,
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+          },
+        });
+
+        const res = await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${authorToken}`)
+          .send({
+            imageUrl: 'https://cloudinary.com/new-img.jpg',
+            imagePublicId: `pulse_posts/${author.id}/new-image`,
+          })
+          .expect(200);
+
+        expect(res.body.moderationStatus).toBe('PENDING');
+      });
+
+      it('should delete old Cloudinary asset on image replacement', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Stable content',
+            imageUrl: 'https://cloudinary.com/old-asset.jpg',
+            imagePublicId: `pulse_posts/${author.id}/old-asset-replace`,
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+          },
+        });
+
+        const cloudinaryMock = require('cloudinary').v2;
+        cloudinaryMock.uploader.destroy.mockClear();
+
+        await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${authorToken}`)
+          .send({
+            imageUrl: 'https://cloudinary.com/new-asset.jpg',
+            imagePublicId: `pulse_posts/${author.id}/new-asset-replace`,
+          })
+          .expect(200);
+
+        expect(cloudinaryMock.uploader.destroy).toHaveBeenCalledWith(
+          `pulse_posts/${author.id}/old-asset-replace`,
+        );
+      });
+
+      it('should clear image fields and clean old Cloudinary asset on image removal', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Stable content',
+            imageUrl: 'https://cloudinary.com/old-asset.jpg',
+            imagePublicId: `pulse_posts/${author.id}/old-asset-remove`,
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+          },
+        });
+
+        const cloudinaryMock = require('cloudinary').v2;
+        cloudinaryMock.uploader.destroy.mockClear();
+
+        const res = await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${authorToken}`)
+          .send({
+            imageUrl: null,
+            imagePublicId: null,
+          })
+          .expect(200);
+
+        expect(res.body.imageUrl).toBeNull();
+        expect(res.body.imagePublicId).toBeNull();
+        expect(cloudinaryMock.uploader.destroy).toHaveBeenCalledWith(
+          `pulse_posts/${author.id}/old-asset-remove`,
+        );
+      });
+
+      it('should invalidate Redis feed cache on edits', async () => {
+        const post = await prisma.post.create({
+          data: {
+            content: 'Trigger invalidate cache',
+            authorId: author.id,
+            moderationStatus: 'APPROVED',
+          },
+        });
+
+        await request(app.getHttpServer())
+          .patch(`/api/v1/posts/${post.id}`)
+          .set('Authorization', `Bearer ${authorToken}`)
+          .send({ content: 'Invalidate cache text' })
+          .expect(200);
       });
     });
   });

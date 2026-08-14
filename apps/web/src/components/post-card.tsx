@@ -14,6 +14,7 @@ import {
   Trash2,
   Calendar,
 } from 'lucide-react';
+import PostComposer from './post-composer';
 
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -22,6 +23,12 @@ export default function PostCard({ post }: { post: PostResponse }) {
   const router = useRouter();
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowEditModal(true);
+  };
 
   // Optimistic states
   const [localIsLiked, setLocalIsLiked] = useState(post.isLiked);
@@ -221,13 +228,27 @@ export default function PostCard({ post }: { post: PostResponse }) {
             </div>
 
             {isAuthor && (
-              <button
-                onClick={handleDelete}
-                disabled={deletePostMutation.isPending}
-                className="rounded-lg p-1.5 text-slate-600 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400 transition-all disabled:pointer-events-none"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                <button
+                  type="button"
+                  onClick={handleEdit}
+                  className="rounded-lg p-1.5 text-slate-600 hover:bg-indigo-500/10 hover:text-indigo-400 transition-all"
+                  title="Edit Post"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deletePostMutation.isPending}
+                  className="rounded-lg p-1.5 text-slate-600 hover:bg-red-500/10 hover:text-red-400 transition-all disabled:pointer-events-none"
+                  title="Delete Post"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             )}
           </div>
 
@@ -300,6 +321,29 @@ export default function PostCard({ post }: { post: PostResponse }) {
           </div>
         </div>
       </div>
+
+      {showEditModal && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+        >
+          <div className="relative w-full max-w-lg rounded-xl border border-slate-900 bg-slate-950 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Edit Post</h3>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-900 hover:text-slate-200 transition-all"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <PostComposer editingPost={post} onComplete={() => setShowEditModal(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

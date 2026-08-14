@@ -12,6 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { RedisService } from '../redis/redis.service';
 import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 export interface AuthorSummary {
   id: string;
@@ -33,6 +34,7 @@ export interface PostResponse {
   isLiked: boolean;
   isBookmarked: boolean;
   isReposted: boolean;
+  imagePublicId: string | null;
   moderationStatus?: ModerationStatus;
 }
 
@@ -47,6 +49,7 @@ export class PostsService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly redisService: RedisService,
+    private readonly cloudinaryService: CloudinaryService,
     @InjectQueue('moderation-queue') private readonly moderationQueue: Queue,
   ) {}
 
@@ -82,6 +85,7 @@ export class PostsService {
       data: {
         content: dto.content,
         imageUrl: dto.imageUrl,
+        imagePublicId: dto.imagePublicId,
         authorId,
         communityId: dto.communityId,
       },
@@ -121,10 +125,67 @@ export class PostsService {
       throw new ForbiddenException('You can only edit your own posts');
     }
 
-    return this.prisma.post.update({
+    const oldPublicId = post.imagePublicId;
+
+    const textChanged =
+      dto.content !== undefined && dto.content !== post.content;
+    const imageChanged =
+      (dto.imageUrl !== undefined && dto.imageUrl !== post.imageUrl) ||
+      (dto.imagePublicId !== undefined &&
+        dto.imagePublicId !== post.imagePublicId);
+
+    const shouldResetModeration =
+      post.moderationStatus === ModerationStatus.APPROVED &&
+      (textChanged || imageChanged);
+
+    const updateData: Prisma.PostUpdateInput = {
+      content: dto.content !== undefined ? dto.content : undefined,
+      imageUrl: dto.imageUrl !== undefined ? dto.imageUrl : undefined,
+      imagePublicId:
+        dto.imagePublicId !== undefined ? dto.imagePublicId : undefined,
+    };
+
+    if (shouldResetModeration) {
+      updateData.moderationStatus = ModerationStatus.PENDING;
+      updateData.moderationReason = null;
+      updateData.moderatedAt = null;
+    }
+
+    const updatedPost = await this.prisma.post.update({
       where: { id: postId },
-      data: dto,
+      data: updateData,
     });
+
+    const cloudinaryImageChanged =
+      dto.imagePublicId !== undefined && dto.imagePublicId !== oldPublicId;
+    if (cloudinaryImageChanged && oldPublicId) {
+      await this.cloudinaryService
+        .deleteAsset(oldPublicId, authorId)
+        .catch((err) => {
+          console.error('Failed to delete replaced Cloudinary asset:', err);
+        });
+    }
+
+    if (shouldResetModeration) {
+      await this.moderationQueue
+        .add(
+          'moderateContent',
+          {
+            targetId: updatedPost.id,
+            type: 'POST',
+            content: updatedPost.content,
+          },
+          { attempts: 3, backoff: 5000 },
+        )
+        .catch((err: unknown) => {
+          console.error('Failed to enqueue edited post moderation job:', err);
+        });
+    }
+
+    // Invalidate user feed caches in Redis
+    await this.invalidateUserFeedCache(authorId);
+
+    return updatedPost;
   }
 
   async delete(postId: string, authorId: string): Promise<{ message: string }> {
@@ -143,6 +204,17 @@ export class PostsService {
     await this.prisma.post.delete({
       where: { id: postId },
     });
+
+    if (post.imagePublicId) {
+      await this.cloudinaryService
+        .deleteAsset(post.imagePublicId, authorId)
+        .catch((err) => {
+          console.error(
+            'Failed to delete Cloudinary asset on post deletion:',
+            err,
+          );
+        });
+    }
 
     return { message: 'Post deleted successfully' };
   }
@@ -208,6 +280,7 @@ export class PostsService {
       id: post.id,
       content: post.content,
       imageUrl: post.imageUrl,
+      imagePublicId: post.imagePublicId,
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
       author: {
@@ -374,6 +447,7 @@ export class PostsService {
       id: post.id,
       content: post.content,
       imageUrl: post.imageUrl,
+      imagePublicId: post.imagePublicId,
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
       author: {

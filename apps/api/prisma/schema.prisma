@@ -63,6 +63,7 @@ model Post {
   id               String           @id @default(uuid())
   content          String
   imageUrl         String?          @map("image_url")
+  imagePublicId    String?          @map("image_public_id")
   authorId         String           @map("author_id")
   communityId      String?          @map("community_id")
   moderationStatus ModerationStatus @default(PENDING) @map("moderation_status")

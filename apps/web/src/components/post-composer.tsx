@@ -1,33 +1,69 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../lib/api-client';
 import { useAuth } from '../hooks/auth-context';
 import { Image as ImageIcon, Send, Sparkles } from 'lucide-react';
-import { ApiResponse } from '../types';
+import { ApiResponse, PostResponse } from '../types';
 
-export default function PostComposer({ communityId }: { communityId?: string }) {
+export default function PostComposer({
+  communityId,
+  editingPost,
+  onComplete,
+}: {
+  communityId?: string;
+  editingPost?: PostResponse;
+  onComplete?: () => void;
+}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [content, setContent] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [showImageInput, setShowImageInput] = useState(false);
+  const [content, setContent] = useState(editingPost?.content ?? '');
+  const [imageUrl, setImageUrl] = useState(editingPost?.imageUrl ?? '');
+  const [imagePublicId, setImagePublicId] = useState(editingPost?.imagePublicId ?? '');
+  const [showImageInput, setShowImageInput] = useState(!!editingPost?.imageUrl);
   const [refiningTone, setRefiningTone] = useState<string | null>(null);
 
-  // 1. Post Creation Mutation
-  const createPostMutation = useMutation({
-    mutationFn: (data: { content: string; imageUrl?: string; communityId?: string }) =>
-      apiClient.post<ApiResponse<unknown>>('/posts', data),
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
+
+  // 1. Post Creation/Edit Mutation
+  const postMutation = useMutation({
+    mutationFn: (data: { content: string; imageUrl?: string | null; imagePublicId?: string | null; communityId?: string }) => {
+      if (editingPost) {
+        return apiClient.patch<ApiResponse<unknown>>(`/posts/${editingPost.id}`, {
+          content: data.content,
+          imageUrl: data.imageUrl,
+          imagePublicId: data.imagePublicId,
+        });
+      }
+      return apiClient.post<ApiResponse<unknown>>('/posts', data);
+    },
     onSuccess: () => {
-      setContent('');
-      setImageUrl('');
-      setShowImageInput(false);
+      if (!editingPost) {
+        setContent('');
+        setImageUrl('');
+        setImagePublicId('');
+        setUploadProgress(0);
+        setUploadError(null);
+        setShowImageInput(false);
+      }
       // Invalidate feed and community-specific query cache keys
       queryClient.invalidateQueries({ queryKey: ['feed'] });
+      queryClient.invalidateQueries({ queryKey: ['user-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['user-reposts'] });
+      queryClient.invalidateQueries({ queryKey: ['user-bookmarks'] });
+      queryClient.invalidateQueries({ queryKey: ['explore'] });
+      queryClient.invalidateQueries({ queryKey: ['search'] });
+      if (editingPost) {
+        queryClient.invalidateQueries({ queryKey: ['post', editingPost.id] });
+      }
       if (communityId) {
         queryClient.invalidateQueries({ queryKey: ['community-posts', communityId] });
       }
+      onComplete?.();
     },
   });
 
@@ -51,13 +87,115 @@ export default function PostComposer({ communityId }: { communityId?: string }) 
     refineMutation.mutate({ text: content.trim(), tone });
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError('Invalid file type. Only JPG, PNG, and WEBP are supported.');
+      return;
+    }
+
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      setUploadError('Image size exceeds 5MB limit.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadError(null);
+
+    try {
+      const sigData = await apiClient.post<{
+        signature: string;
+        timestamp: number;
+        folder: string;
+        apiKey: string;
+        cloudName: string;
+      }>('/cloudinary/signature');
+
+      const xhr = new XMLHttpRequest();
+      xhrRef.current = xhr;
+
+      xhr.open('POST', `https://api.cloudinary.com/v1_1/${sigData.cloudName}/image/upload`);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          setImageUrl(response.secure_url);
+          setImagePublicId(response.public_id);
+          setUploadProgress(100);
+          setUploading(false);
+        } else {
+          setUploadError('Upload failed. Please try again.');
+          setUploading(false);
+        }
+      };
+
+      xhr.onerror = () => {
+        setUploadError('Network error during upload.');
+        setUploading(false);
+      };
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('signature', sigData.signature);
+      formData.append('timestamp', String(sigData.timestamp));
+      formData.append('folder', sigData.folder);
+      formData.append('api_key', sigData.apiKey);
+
+      xhr.send(formData);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setUploadError(apiErr?.message ?? 'Failed to initialize upload signature.');
+      setUploading(false);
+    }
+  };
+
+  const cancelUpload = () => {
+    if (xhrRef.current) {
+      xhrRef.current.abort();
+      xhrRef.current = null;
+    }
+    setUploading(false);
+    setUploadProgress(0);
+  };
+
+  const handleRemoveImage = async () => {
+    const pubId = imagePublicId;
+    setImageUrl('');
+    setImagePublicId('');
+    setUploadProgress(0);
+    setUploadError(null);
+    const isNewUpload = editingPost ? pubId !== editingPost.imagePublicId : true;
+    if (pubId && isNewUpload) {
+      try {
+        await apiClient.post('/cloudinary/delete', { publicId: pubId });
+      } catch (err) {
+        console.error('Failed to delete temp upload asset:', err);
+      }
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) return;
 
-    createPostMutation.mutate({
+    postMutation.mutate({
       content: content.trim(),
-      imageUrl: imageUrl.trim() === '' ? undefined : imageUrl.trim(),
+      imageUrl: imageUrl.trim() === '' ? null : imageUrl.trim(),
+      imagePublicId: imagePublicId.trim() === '' ? null : imagePublicId.trim(),
       communityId,
     });
   };
@@ -97,16 +235,73 @@ export default function PostComposer({ communityId }: { communityId?: string }) 
           </div>
         </div>
 
-        {/* Dynamic Image input block */}
+        {/* Dynamic Image selector and preview dropzone */}
         {showImageInput && (
-          <div className="ml-13 rounded-lg border border-slate-800 bg-slate-950 p-2 transition-all">
-            <input
-              type="text"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="Enter image URL (e.g. https://images.unsplash.com/...)"
-              className="w-full bg-transparent px-2 py-1.5 text-xs text-slate-200 outline-none placeholder-slate-700"
-            />
+          <div className="ml-13 space-y-3">
+            {uploadError && (
+              <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-2.5 text-xs text-red-400">
+                {uploadError}
+              </div>
+            )}
+
+            {!imageUrl && !uploading && (
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-800 rounded-xl bg-slate-950/40 hover:bg-slate-900/40 hover:border-indigo-500/50 cursor-pointer transition-all">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <ImageIcon className="w-8 h-8 text-slate-500 mb-2 transition-all hover:scale-110" />
+                  <p className="text-xs text-slate-400 font-medium">
+                    Drag & drop or <span className="text-indigo-400">browse</span>
+                  </p>
+                  <p className="text-[10px] text-slate-600 mt-1">
+                    PNG, JPG, or WEBP (Max 5MB)
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </label>
+            )}
+
+            {uploading && (
+              <div className="flex flex-col items-center justify-center w-full h-32 border border-slate-800 rounded-xl bg-slate-950/40 p-4">
+                <div className="w-full bg-slate-800 rounded-full h-1.5 mb-2 overflow-hidden">
+                  <div
+                    className="bg-indigo-500 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-400">Uploading: {uploadProgress}%</p>
+                <button
+                  type="button"
+                  onClick={cancelUpload}
+                  className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-300 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {imageUrl && (
+              <div className="relative rounded-xl border border-slate-850 overflow-hidden bg-slate-950">
+                <img
+                  src={imageUrl}
+                  alt="Upload preview"
+                  className="w-full max-h-60 object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-slate-300 hover:bg-black/90 hover:text-white transition-all"
+                  title="Remove Image"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -176,14 +371,14 @@ export default function PostComposer({ communityId }: { communityId?: string }) 
 
           <button
             type="submit"
-            disabled={!content.trim() || createPostMutation.isPending || refineMutation.isPending}
+            disabled={!content.trim() || postMutation.isPending || refineMutation.isPending || uploading}
             className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white transition-all hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-50"
           >
-            {createPostMutation.isPending ? (
+            {postMutation.isPending ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
             ) : (
               <>
-                <Send className="h-3 w-3" /> Post
+                <Send className="h-3 w-3" /> {editingPost ? 'Save Changes' : 'Post'}
               </>
             )}
           </button>

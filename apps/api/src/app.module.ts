@@ -9,6 +9,7 @@ import {
   redisConfig,
   jwtConfig,
   googleConfig,
+  cloudinaryConfig,
   envValidationSchema,
 } from './config';
 import { PrismaModule } from './prisma';
@@ -25,6 +26,7 @@ import { DiscoveryModule } from './discovery/discovery.module';
 import { AiModule } from './ai/ai.module';
 import { AdminModule } from './admin/admin.module';
 import { ChatModule } from './chat/chat.module';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
 
 @Module({
@@ -32,7 +34,14 @@ import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
     // ── Configuration ────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, redisConfig, jwtConfig, googleConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        redisConfig,
+        jwtConfig,
+        googleConfig,
+        cloudinaryConfig,
+      ],
       validationSchema: envValidationSchema,
       validationOptions: {
         abortEarly: true,
@@ -66,6 +75,7 @@ import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
     AiModule,
     AdminModule,
     ChatModule,
+    CloudinaryModule,
   ],
   providers: [
     {

@@ -15,6 +15,7 @@ import { AdminService } from './admin/admin.service';
 import { RedisService } from './redis/redis.service';
 import { Role, ModerationStatus } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { CloudinaryService } from './cloudinary/cloudinary.service';
 import {
   UnauthorizedException,
   ForbiddenException,
@@ -127,6 +128,12 @@ describe('Pulse Integration Spec Suite', () => {
               if (key === 'google.clientId') return 'mock-client-id';
               return null;
             }),
+          },
+        },
+        {
+          provide: CloudinaryService,
+          useValue: {
+            deleteAsset: jest.fn().mockResolvedValue({ result: 'ok' }),
           },
         },
       ],
