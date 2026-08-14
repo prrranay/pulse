@@ -130,10 +130,6 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
-    defaults:
-      run:
-        working-directory: apps/web
-
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -149,14 +145,17 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
       - name: Pull Vercel Environment Info
-        run: vercel pull --yes --environment=production
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build Vercel Project
-        run: vercel build --prod
+        run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy Project to Vercel
-        run: vercel deploy --prebuilt --prod
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
