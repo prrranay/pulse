@@ -8,7 +8,7 @@
     "apps/api"
   ],
   "scripts": {
-    "postinstall": "npm run db:generate",
+    "postinstall": "node scripts/postinstall.js",
     "dev": "concurrently -n web,api -c cyan,green \"npm run dev:web\" \"npm run dev:api\"",
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:api": "npm run start:dev --workspace=apps/api",
