@@ -8,6 +8,7 @@ import {
   databaseConfig,
   redisConfig,
   jwtConfig,
+  googleConfig,
   envValidationSchema,
 } from './config';
 import { PrismaModule } from './prisma';
@@ -31,7 +32,7 @@ import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
     // ── Configuration ────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, redisConfig, jwtConfig],
+      load: [appConfig, databaseConfig, redisConfig, jwtConfig, googleConfig],
       validationSchema: envValidationSchema,
       validationOptions: {
         abortEarly: true,

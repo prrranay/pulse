@@ -6,22 +6,18 @@ import {
   Body,
   Param,
   UseGuards,
-  Headers,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { CommunitiesService } from './communities.service';
 import { CreateCommunityDto } from './dto/communities.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
-import { JwtService } from '@nestjs/jwt';
 
 @Controller('communities')
 export class CommunitiesController {
-  constructor(
-    private readonly communitiesService: CommunitiesService,
-    private readonly jwtService: JwtService,
-  ) {}
+  constructor(private readonly communitiesService: CommunitiesService) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -34,11 +30,11 @@ export class CommunitiesController {
   }
 
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   async getDetails(
     @Param('id') id: string,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    const currentUserId = this.extractUserId(authHeader);
     return this.communitiesService.getDetails(id, currentUserId);
   }
 
@@ -57,27 +53,12 @@ export class CommunitiesController {
   }
 
   @Get(':id/posts')
+  @UseGuards(OptionalJwtAuthGuard)
   async getPosts(
     @Param('id') id: string,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    const currentUserId = this.extractUserId(authHeader);
     return this.communitiesService.getPosts(id, currentUserId);
-  }
-
-  private extractUserId(authHeader?: string): string | undefined {
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          return (payload as Record<string, any>).sub as string | undefined;
-        }
-      } catch {
-        // Silently treat as anonymous
-      }
-    }
-    return undefined;
   }
 }
 export type { CreateCommunityDto };

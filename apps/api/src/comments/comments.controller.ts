@@ -13,16 +13,13 @@ import {
 import { CommentsService } from './comments.service';
 import { CreateCommentDto, CommentQueryDto } from './dto/comments.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { RateLimit } from '../common/decorators/rate-limit.decorator';
-import { JwtService } from '@nestjs/jwt';
 
 @Controller()
 export class CommentsController {
-  constructor(
-    private readonly commentsService: CommentsService,
-    private readonly jwtService: JwtService,
-  ) {}
+  constructor(private readonly commentsService: CommentsService) {}
 
   @Post('posts/:id/comments')
   @UseGuards(JwtAuthGuard)
@@ -37,26 +34,12 @@ export class CommentsController {
   }
 
   @Get('posts/:id/comments')
+  @UseGuards(OptionalJwtAuthGuard)
   async getComments(
     @Param('id') postId: string,
     @Query() query: CommentQueryDto,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    let currentUserId: string | undefined;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          currentUserId = (payload as Record<string, any>).sub as
-            string | undefined;
-        }
-      } catch {
-        // Silently treat as anonymous
-      }
-    }
-
     return this.commentsService.getComments(postId, query, currentUserId);
   }
 

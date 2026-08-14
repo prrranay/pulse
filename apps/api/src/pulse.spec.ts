@@ -14,6 +14,7 @@ import { NotificationsService } from './notifications/notifications.service';
 import { AdminService } from './admin/admin.service';
 import { RedisService } from './redis/redis.service';
 import { Role, ModerationStatus } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 import {
   UnauthorizedException,
   ForbiddenException,
@@ -119,6 +120,15 @@ describe('Pulse Integration Spec Suite', () => {
         { provide: 'BullQueue_moderation-queue', useValue: mockQueue },
         { provide: RedisService, useValue: mockRedis },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockImplementation((key: string) => {
+              if (key === 'google.clientId') return 'mock-client-id';
+              return null;
+            }),
+          },
+        },
       ],
     }).compile();
 

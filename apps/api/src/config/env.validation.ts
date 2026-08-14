@@ -23,4 +23,8 @@ export const envValidationSchema = Joi.object({
 
   // CORS
   FRONTEND_URL: Joi.string().default('http://localhost:3000'),
+
+  // Google OAuth
+  GOOGLE_CLIENT_ID: Joi.string().default('mock-client-id'),
+  GOOGLE_CLIENT_SECRET: Joi.string().default('mock-client-secret'),
 });

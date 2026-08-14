@@ -15,16 +15,13 @@ import {
 import { PostsService } from './posts.service';
 import { CreatePostDto, UpdatePostDto, FeedQueryDto } from './dto/posts.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
-import { JwtService } from '@nestjs/jwt';
 import { RateLimit } from '../common/decorators/rate-limit.decorator';
 
 @Controller('posts')
 export class PostsController {
-  constructor(
-    private readonly postsService: PostsService,
-    private readonly jwtService: JwtService,
-  ) {}
+  constructor(private readonly postsService: PostsService) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -44,25 +41,11 @@ export class PostsController {
   }
 
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   async getById(
     @Param('id') id: string,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    let currentUserId: string | undefined;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          currentUserId = (payload as Record<string, any>).sub as
-            string | undefined;
-        }
-      } catch {
-        // Silently treat as anonymous
-      }
-    }
-
     return this.postsService.getById(id, currentUserId);
   }
 
@@ -125,50 +108,22 @@ export class PostsController {
   }
 
   @Get('user/:username')
+  @UseGuards(OptionalJwtAuthGuard)
   async getUserPosts(
     @Param('username') username: string,
     @Query() query: FeedQueryDto,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    let currentUserId: string | undefined;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          currentUserId = (payload as Record<string, any>).sub as
-            string | undefined;
-        }
-      } catch {
-        // Silently treat as anonymous
-      }
-    }
-
     return this.postsService.getUserPosts(username, currentUserId, query);
   }
 
   @Get('user/:username/reposts')
+  @UseGuards(OptionalJwtAuthGuard)
   async getUserReposts(
     @Param('username') username: string,
     @Query() query: FeedQueryDto,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    let currentUserId: string | undefined;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          currentUserId = (payload as Record<string, any>).sub as
-            string | undefined;
-        }
-      } catch {
-        // Silently treat as anonymous
-      }
-    }
-
     return this.postsService.getUserReposts(username, currentUserId, query);
   }
 

@@ -12,36 +12,19 @@ import {
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/users.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/user.decorator';
-import { JwtService } from '@nestjs/jwt';
 
 @Controller('users')
 export class UsersController {
-  constructor(
-    private readonly usersService: UsersService,
-    private readonly jwtService: JwtService,
-  ) {}
+  constructor(private readonly usersService: UsersService) {}
 
   @Get(':username')
+  @UseGuards(OptionalJwtAuthGuard)
   async getProfile(
     @Param('username') username: string,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    let currentUserId: string | undefined;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          currentUserId = (payload as Record<string, any>).sub as
-            string | undefined;
-        }
-      } catch {
-        // Silently fail, user is treated as anonymous
-      }
-    }
-
     return this.usersService.findByUsername(username, currentUserId);
   }
 
@@ -73,44 +56,20 @@ export class UsersController {
   }
 
   @Get(':id/followers')
+  @UseGuards(OptionalJwtAuthGuard)
   async getFollowers(
     @Param('id') userId: string,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    let currentUserId: string | undefined;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          currentUserId = (payload as Record<string, any>).sub as
-            string | undefined;
-        }
-      } catch {
-        // anonymous
-      }
-    }
     return this.usersService.getFollowers(userId, currentUserId);
   }
 
   @Get(':id/following')
+  @UseGuards(OptionalJwtAuthGuard)
   async getFollowing(
     @Param('id') userId: string,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    let currentUserId: string | undefined;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          currentUserId = (payload as Record<string, any>).sub as
-            string | undefined;
-        }
-      } catch {
-        // anonymous
-      }
-    }
     return this.usersService.getFollowing(userId, currentUserId);
   }
 }

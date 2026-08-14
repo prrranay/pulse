@@ -46,6 +46,50 @@ jest.mock('./jobs/jobs.module', () => {
   return { JobsModule: MockJobsModule };
 });
 
+// Mock google-auth-library for secure Google token verification testing
+jest.mock('google-auth-library', () => {
+  return {
+    OAuth2Client: jest.fn().mockImplementation((clientId: string) => {
+      return {
+        verifyIdToken: jest.fn().mockImplementation(({ idToken, audience }) => {
+          if (idToken === 'valid-google-id-token') {
+            return Promise.resolve({
+              getPayload: () => ({
+                sub: 'google-user-id-12345',
+                email: 'google_user@pulse.dev',
+                email_verified: true,
+                name: 'Google User',
+                picture: 'https://avatar.google.com/12345',
+              }),
+            });
+          }
+          if (idToken === 'valid-google-id-token-existing-email') {
+            return Promise.resolve({
+              getPayload: () => ({
+                sub: 'google-user-id-67890',
+                email: 'e2e_user@pulse.dev', // Matches standard registered e2e user email
+                email_verified: true,
+                name: 'Google Linked User',
+              }),
+            });
+          }
+          if (idToken === 'valid-google-id-token-duplicate-googleid') {
+            return Promise.resolve({
+              getPayload: () => ({
+                sub: 'google-user-id-12345', // Matches sub of google-user-id-12345 already created
+                email: 'another_email@pulse.dev',
+                email_verified: true,
+                name: 'Google Another Email',
+              }),
+            });
+          }
+          return Promise.reject(new Error('Invalid token signature'));
+        }),
+      };
+    }),
+  };
+});
+
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   INestApplication,
@@ -197,6 +241,173 @@ describe('Pulse End-to-End Integration Suite', () => {
         .get('/api/v1/admin/analytics')
         .set('Authorization', `Bearer ${token}`)
         .expect(403);
+    });
+
+    it('should reject forged/unsigned/fake tokens on protected and optional-auth endpoints', async () => {
+      const userA = await prisma.user.create({
+        data: {
+          email: 'user_a_sec@pulse.dev',
+          username: 'user_a_sec',
+          password: 'Password123!',
+        },
+      });
+
+      const userB = await prisma.user.create({
+        data: {
+          email: 'user_b_sec@pulse.dev',
+          username: 'user_b_sec',
+          password: 'Password123!',
+        },
+      });
+
+      // 1. Create a post by User B
+      const post = await prisma.post.create({
+        data: {
+          content: 'Secret post content',
+          authorId: userB.id,
+          moderationStatus: ModerationStatus.APPROVED,
+        },
+      });
+
+      // 2. Have User A like User B's post
+      await prisma.like.create({
+        data: {
+          userId: userA.id,
+          postId: post.id,
+        },
+      });
+
+      // 3. Obtain a valid token for User A
+      const tokenA = await jwt.signAsync({
+        sub: userA.id,
+        email: userA.email,
+      });
+
+      // Verify that requesting with valid User A token shows isLiked: true
+      const resValid = await request(app.getHttpServer())
+        .get(`/api/v1/posts/${post.id}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+      expect(resValid.body.isLiked).toBe(true);
+
+      // 4. Construct a fake JWT payload claiming to be User A, but sign it with a different secret (or invalid signature)
+      const fakeJwtService = new JwtService({ secret: 'wrong_secret_key_123' });
+      const fakeToken = await fakeJwtService.signAsync({
+        sub: userA.id,
+        email: userA.email,
+      });
+
+      // 5. Send fake token to an optional-auth endpoint (GET /posts/:id)
+      const resFakeOptional = await request(app.getHttpServer())
+        .get(`/api/v1/posts/${post.id}`)
+        .set('Authorization', `Bearer ${fakeToken}`)
+        .expect(200);
+
+      // 6. Verify the API treats the caller as anonymous (isLiked should be false, NOT true)
+      expect(resFakeOptional.body.isLiked).toBe(false);
+
+      // 7. Send fake token to a protected endpoint (GET /notifications)
+      await request(app.getHttpServer())
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${fakeToken}`)
+        .expect(401); // Must reject with 401
+    });
+
+    describe('Google OAuth Login', () => {
+      it('should create a new account when Google ID is verified and no user exists', async () => {
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/auth/google')
+          .send({ idToken: 'valid-google-id-token' })
+          .expect(200);
+
+        expect(res.body.accessToken).toBeDefined();
+        expect(res.body.user.email).toBe('google_user@pulse.dev');
+        expect(res.body.user.googleId).toBe('google-user-id-12345');
+        expect(res.body.user.password).toBeUndefined();
+
+        // Verify the user exists in database
+        const dbUser = await prisma.user.findUnique({
+          where: { email: 'google_user@pulse.dev' },
+        });
+        expect(dbUser).toBeDefined();
+        expect(dbUser?.googleId).toBe('google-user-id-12345');
+        expect(dbUser?.username).toBe('google_user');
+        expect(dbUser?.password).toBeNull();
+      });
+
+      it('should log in existing Google user successfully without creating a duplicate', async () => {
+        // Send request again
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/auth/google')
+          .send({ idToken: 'valid-google-id-token' })
+          .expect(200);
+
+        expect(res.body.accessToken).toBeDefined();
+        expect(res.body.user.email).toBe('google_user@pulse.dev');
+
+        // Verify only 1 user exists with this email
+        const count = await prisma.user.count({
+          where: { email: 'google_user@pulse.dev' },
+        });
+        expect(count).toBe(1);
+      });
+
+      it('should safely link Google account to an existing email/password account if emails match', async () => {
+        // Create an existing user with email/password
+        const existingEmail = 'e2e_user@pulse.dev'; // From first test case
+        const dbUserBefore = await prisma.user.findUnique({
+          where: { email: existingEmail },
+        });
+        expect(dbUserBefore).toBeDefined();
+        expect(dbUserBefore?.googleId).toBeNull();
+
+        // Send Google login with same email
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/auth/google')
+          .send({ idToken: 'valid-google-id-token-existing-email' })
+          .expect(200);
+
+        expect(res.body.accessToken).toBeDefined();
+        expect(res.body.user.email).toBe(existingEmail);
+        expect(res.body.user.googleId).toBe('google-user-id-67890');
+
+        // Verify googleId has been updated on the existing user record
+        const dbUserAfter = await prisma.user.findUnique({
+          where: { email: existingEmail },
+        });
+        expect(dbUserAfter?.id).toBe(dbUserBefore?.id);
+        expect(dbUserAfter?.googleId).toBe('google-user-id-67890');
+        expect(dbUserAfter?.password).not.toBeNull(); // Password should remain intact!
+      });
+
+      it('should log in by googleId even if email changes, preventing duplicate googleId entries', async () => {
+        // Send Google login with same googleId but different email payload
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/auth/google')
+          .send({ idToken: 'valid-google-id-token-duplicate-googleid' })
+          .expect(200);
+
+        // Should return the original google_user@pulse.dev account because googleId matched
+        expect(res.body.user.email).toBe('google_user@pulse.dev');
+      });
+
+      it('should reject standard password logins for Google-only users with empty password', async () => {
+        // ValidationPipe rejects empty string or AuthService throws 401
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/auth/login')
+          .send({
+            usernameOrEmail: 'google_user',
+            password: '',
+          });
+        expect([400, 401]).toContain(res.status);
+      });
+
+      it('should reject invalid Google tokens with 401', async () => {
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/google')
+          .send({ idToken: 'invalid-token' })
+          .expect(401);
+      });
     });
   });
 

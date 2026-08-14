@@ -1,17 +1,15 @@
-import { Controller, Get, Query, Headers } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { DiscoveryService } from './discovery.service';
-import { JwtService } from '@nestjs/jwt';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/user.decorator';
 
 @Controller('discovery')
 export class DiscoveryController {
-  constructor(
-    private readonly discoveryService: DiscoveryService,
-    private readonly jwtService: JwtService,
-  ) {}
+  constructor(private readonly discoveryService: DiscoveryService) {}
 
   @Get('explore')
-  async getExplore(@Headers('authorization') authHeader?: string) {
-    const currentUserId = this.extractUserId(authHeader);
+  @UseGuards(OptionalJwtAuthGuard)
+  async getExplore(@CurrentUser('id') currentUserId?: string) {
     return this.discoveryService.getExploreData(currentUserId);
   }
 
@@ -21,27 +19,12 @@ export class DiscoveryController {
   }
 
   @Get('search')
+  @UseGuards(OptionalJwtAuthGuard)
   async search(
     @Query('q') q: string,
-    @Headers('authorization') authHeader?: string,
+    @CurrentUser('id') currentUserId?: string,
   ) {
-    const currentUserId = this.extractUserId(authHeader);
     return this.discoveryService.searchAll(q ?? '', currentUserId);
-  }
-
-  private extractUserId(authHeader?: string): string | undefined {
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const payload: unknown = this.jwtService.decode(token);
-        if (payload && typeof payload === 'object') {
-          return (payload as Record<string, any>).sub as string | undefined;
-        }
-      } catch {
-        // Silently treat as anonymous
-      }
-    }
-    return undefined;
   }
 }
 export type { DiscoveryService };

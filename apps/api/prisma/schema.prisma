@@ -16,7 +16,8 @@ model User {
   displayName   String?           @map("display_name")
   bio           String?
   avatarUrl     String?           @map("avatar_url")
-  password      String
+  password      String?
+  googleId      String?           @unique @map("google_id")
   isVerified    Boolean           @default(false) @map("is_verified")
   role          Role              @default(USER)
   isSuspended   Boolean           @default(false) @map("is_suspended")
