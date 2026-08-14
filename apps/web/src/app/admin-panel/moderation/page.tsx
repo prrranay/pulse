@@ -5,10 +5,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { ApiResponse, AdminFlaggedContentResponse, FlaggedContentItem } from '../../../types';
 import { RefreshCw, Check, X, ShieldAlert, FileText, MessageSquare } from 'lucide-react';
+import ConfirmModal from '../../../components/confirm-modal';
 
 export default function AdminModerationPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'posts' | 'comments'>('posts');
+  const [showRejectConfirm, setShowRejectConfirm] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<FlaggedContentItem | null>(null);
 
   // 1. Fetch Flagged Content
   const {
@@ -53,9 +56,8 @@ export default function AdminModerationPage() {
   };
 
   const handleReject = (item: FlaggedContentItem) => {
-    if (confirm(`Are you sure you want to reject/remove this ${item.type.toLowerCase()}?`)) {
-      rejectMutation.mutate({ id: item.id, type: item.type });
-    }
+    setSelectedItem(item);
+    setShowRejectConfirm(true);
   };
 
   return (
@@ -175,6 +177,22 @@ export default function AdminModerationPage() {
           ))}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={showRejectConfirm}
+        title={`Reject ${selectedItem?.type === 'POST' ? 'Post' : 'Comment'}`}
+        message={`Are you sure you want to permanently reject and remove this flagged ${selectedItem?.type.toLowerCase()}?`}
+        confirmText="Reject & Remove"
+        isDanger={true}
+        onConfirm={() => {
+          setShowRejectConfirm(false);
+          if (selectedItem) rejectMutation.mutate({ id: selectedItem.id, type: selectedItem.type });
+        }}
+        onCancel={() => {
+          setShowRejectConfirm(false);
+          setSelectedItem(null);
+        }}
+      />
     </div>
   );
 }

@@ -23,6 +23,7 @@ export default function PostComposer({
   const [imagePublicId, setImagePublicId] = useState(editingPost?.imagePublicId ?? '');
   const [showImageInput, setShowImageInput] = useState(!!editingPost?.imageUrl);
   const [refiningTone, setRefiningTone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -65,6 +66,9 @@ export default function PostComposer({
       }
       onComplete?.();
     },
+    onError: (err: any) => {
+      setError(err?.message ?? 'Failed to save post. Please try again.');
+    },
   });
 
   // 2. AI Refine Mutation
@@ -74,10 +78,11 @@ export default function PostComposer({
     onSuccess: (res) => {
       setContent(res.refined);
       setRefiningTone(null);
+      setError(null);
     },
-    onError: () => {
+    onError: (err: any) => {
       setRefiningTone(null);
-      alert('AI refinement failed. Please try again.');
+      setError(err?.message ?? 'AI refinement failed. Please try again.');
     },
   });
 
@@ -110,13 +115,14 @@ export default function PostComposer({
     setUploadError(null);
 
     try {
-      const sigData = await apiClient.post<{
+      const res = await apiClient.post<ApiResponse<{
         signature: string;
         timestamp: number;
         folder: string;
         apiKey: string;
         cloudName: string;
-      }>('/cloudinary/signature');
+      }>>('/cloudinary/signature');
+      const sigData = res.data;
 
       const xhr = new XMLHttpRequest();
       xhrRef.current = xhr;
@@ -203,7 +209,19 @@ export default function PostComposer({
   if (!user) return null;
 
   return (
-    <div className="rounded-xl border border-slate-900 bg-slate-900/40 p-4 backdrop-blur-xl space-y-4">
+    <div className={editingPost ? "space-y-4 w-full" : "rounded-xl border border-slate-900 bg-slate-900/40 p-4 backdrop-blur-xl space-y-4"}>
+      {error && (
+        <div className="flex items-center justify-between rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="text-red-400 hover:text-red-300 font-bold ml-2 text-sm"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* User avatar + Text input */}
         <div className="flex items-start gap-3">
@@ -229,8 +247,8 @@ export default function PostComposer({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="What's on your mind? Share your code, ideas, or updates..."
-              rows={3}
-              className="w-full bg-transparent text-sm text-slate-100 placeholder-slate-600 outline-none resize-none"
+              rows={editingPost ? 5 : 3}
+              className="w-full rounded-xl border border-slate-900 bg-slate-950/40 p-3.5 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition-all resize-none shadow-inner"
             />
           </div>
         </div>

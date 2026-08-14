@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/auth-context';
 import { apiClient } from '../../lib/api-client';
 import { User, ApiResponse } from '../../types';
 import { z } from 'zod';
+import { Eye, EyeOff } from 'lucide-react';
 
 const registerSchema = z.object({
   email: z.string().email({ message: 'Please provide a valid email address' }),
@@ -30,6 +31,7 @@ export default function RegisterPage() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login, user, isLoading } = useAuth();
   const router = useRouter();
@@ -288,16 +290,29 @@ export default function RegisterPage() {
               >
                 Password
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                value={form.password}
-                onChange={handleChange}
-                className="mt-2 w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-100 placeholder-slate-600 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={handleChange}
+                  className="mt-2 w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 pr-10 text-sm text-slate-100 placeholder-slate-600 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute top-5.5 right-3 text-slate-500 hover:text-slate-350 transition-all"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4.5 w-4.5" />
+                  ) : (
+                    <Eye className="h-4.5 w-4.5" />
+                  )}
+                </button>
+              </div>
               {errors.password && (
                 <p className="mt-1 text-xs text-red-400">{errors.password}</p>
               )}

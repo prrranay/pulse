@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useAuth } from '../hooks/auth-context';
 import ChatBadge from './chat-badge';
 import NotificationBell from './notification-bell';
-import { Shield, Home, Settings, Search } from 'lucide-react';
+import { Shield, Home, Settings, Search, LogOut } from 'lucide-react';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -16,19 +16,20 @@ export default function Navbar() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 md:px-8 py-3">
         <Link
           href="/"
-          className="bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-xl font-black tracking-wider text-transparent"
+          className="bg-gradient-to-r from-indigo-400 to-indigo-500 bg-clip-text text-xl font-black tracking-wider text-transparent shrink-0"
         >
           Pulse
         </Link>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Admin Dashboard toggle for privileged accounts */}
           {user.role === 'ADMIN' && (
             <Link
               href="/admin-panel"
               className="flex items-center gap-1.5 rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-2.5 py-1 text-xs font-bold text-indigo-400 hover:bg-indigo-500/10 transition-all mr-1 shrink-0"
+              title="Admin Dashboard"
             >
-              <Shield className="h-3.5 w-3.5" /> Dashboard
+              <Shield className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Dashboard</span>
             </Link>
           )}
 
@@ -61,15 +62,17 @@ export default function Navbar() {
 
           <Link
             href={`/${user.username}`}
-            className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all border-l border-slate-900 pl-3"
+            className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all border-l border-slate-900 pl-3 hidden md:inline"
           >
             @{user.username}
           </Link>
           <button
             onClick={logout}
-            className="rounded-lg border border-slate-900 bg-slate-900/50 hover:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all"
+            className="rounded-lg border border-slate-900 bg-slate-900/50 hover:bg-slate-900 p-1.5 sm:px-3 sm:py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all flex items-center gap-1 shrink-0"
+            title="Logout"
           >
-            Logout
+            <span className="hidden sm:inline">Logout</span>
+            <LogOut className="h-4 w-4 sm:hidden" />
           </button>
         </div>
       </div>

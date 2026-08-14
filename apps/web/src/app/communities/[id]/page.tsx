@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../hooks/auth-context';
@@ -11,6 +12,7 @@ import {
 } from '../../../types';
 import PostCard from '../../../components/post-card';
 import PostComposer from '../../../components/post-composer';
+import ConfirmModal from '../../../components/confirm-modal';
 import { PostSkeleton } from '../../../components/skeleton-loader';
 import { ArrowLeft, Users, Calendar, DoorOpen, LogOut } from 'lucide-react';
 
@@ -34,6 +36,8 @@ export default function CommunityDetailPage() {
   });
 
   const community = detailsRes?.data;
+  const [error, setError] = useState<string | null>(null);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
   // 2. Fetch Community Posts
   const { data: postsRes, isLoading: postsLoading } = useQuery<
@@ -71,12 +75,10 @@ export default function CommunityDetailPage() {
     }
     if (community?.isMember) {
       if (community.role === 'OWNER') {
-        alert('As the owner, you cannot leave this community.');
+        setError('As the owner, you cannot leave this community.');
         return;
       }
-      if (confirm('Are you sure you want to leave this community?')) {
-        leaveMutation.mutate();
-      }
+      setShowLeaveConfirm(true);
     } else {
       joinMutation.mutate();
     }
@@ -114,6 +116,18 @@ export default function CommunityDetailPage() {
       {/* Hero Community Banner */}
       <div className="bg-gradient-to-r from-indigo-950 via-slate-950 to-purple-950 border-b border-slate-900 py-8 px-4">
         <div className="mx-auto max-w-2xl space-y-4">
+          {error && (
+            <div className="flex items-center justify-between rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-red-400 hover:text-red-300 font-bold ml-2 text-sm"
+              >
+                ×
+              </button>
+            </div>
+          )}
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-100 sm:text-3xl">
@@ -194,6 +208,19 @@ export default function CommunityDetailPage() {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={showLeaveConfirm}
+        title="Leave Community"
+        message={`Are you sure you want to leave c/${community?.name}?`}
+        confirmText="Leave"
+        isDanger={true}
+        onConfirm={() => {
+          setShowLeaveConfirm(false);
+          leaveMutation.mutate();
+        }}
+        onCancel={() => setShowLeaveConfirm(false)}
+      />
     </div>
   );
 }

@@ -16,7 +16,12 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 
+import { IsString, IsNotEmpty, IsIn } from 'class-validator';
+
 class ActionContentDto {
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(['POST', 'COMMENT'])
   type!: 'POST' | 'COMMENT';
 }
 
@@ -32,8 +37,14 @@ export class AdminController {
   }
 
   @Get('users')
-  async listUsers(@Query('search') search?: string) {
-    return this.adminService.listUsers(search);
+  async listUsers(
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    return this.adminService.listUsers(search, pageNum, limitNum);
   }
 
   @Patch('users/:id/suspend')

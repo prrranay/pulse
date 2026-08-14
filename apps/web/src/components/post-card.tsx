@@ -15,6 +15,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import PostComposer from './post-composer';
+import ConfirmModal from './confirm-modal';
 
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -24,6 +25,7 @@ export default function PostCard({ post }: { post: PostResponse }) {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -163,9 +165,7 @@ export default function PostCard({ post }: { post: PostResponse }) {
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this post?')) {
-      deletePostMutation.mutate();
-    }
+    setShowDeleteConfirm(true);
   };
 
   const isAuthor = currentUser && currentUser.id === post.author.id;
@@ -173,7 +173,9 @@ export default function PostCard({ post }: { post: PostResponse }) {
   return (
     <div
       onClick={() => router.push(`/posts/${post.id}`)}
-      className="group rounded-xl border border-slate-900 bg-slate-900/20 p-5 backdrop-blur-xl shadow-md transition-all hover:border-slate-800 hover:bg-slate-900/30 cursor-pointer"
+      className={`group rounded-xl border border-slate-900 bg-slate-900/20 p-5 backdrop-blur-xl shadow-md transition-all hover:border-slate-800 hover:bg-slate-900/30 cursor-pointer relative ${
+        showEditModal || showDeleteConfirm ? 'z-50' : 'z-0'
+      }`}
     >
       <div className="flex items-start gap-3">
         {/* Author Avatar */}
@@ -344,6 +346,19 @@ export default function PostCard({ post }: { post: PostResponse }) {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Delete Post"
+        message="Are you sure you want to permanently delete this post? This action cannot be undone."
+        confirmText="Delete"
+        isDanger={true}
+        onConfirm={() => {
+          setShowDeleteConfirm(false);
+          deletePostMutation.mutate();
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

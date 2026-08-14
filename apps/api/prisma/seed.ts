@@ -141,14 +141,37 @@ async function main() {
     });
     users.push(user);
   }
+
+  // Generate 250 extra random users for a 5x scaled database
+  const FIRST_NAMES = ['Tech', 'Dev', 'Byte', 'Code', 'Web', 'Data', 'Cloud', 'System', 'Git', 'Node', 'Stack', 'Core', 'Bits', 'Shift'];
+  const LAST_NAMES = ['Master', 'Wizard', 'Craftsman', 'Enthusiast', 'Hacker', 'Architect', 'Sage', 'Guru', 'Pro', 'Ninja', 'Expert', 'Dev'];
+  for (let i = 0; i < 250; i++) {
+    const firstName = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+    const lastName = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+    const username = `${firstName.toLowerCase()}_${lastName.toLowerCase()}_${i}`;
+    const displayName = `${firstName} ${lastName} (${i})`;
+    const bio = `Developer specializing in technical infrastructure and modern system scaling. User #${i}.`;
+
+    const user = await prisma.user.create({
+      data: {
+        username,
+        email: `${username}@pulse.dev`,
+        password: hashedPassword,
+        displayName,
+        role: Role.USER,
+        bio,
+      },
+    });
+    users.push(user);
+  }
   console.log(`Created ${users.length} users successfully.`);
 
   // 3. Create Follow relationships (make random networks)
   const followRecords: { followerId: string; followingId: string }[] = [];
   for (const follower of users) {
-    // Each user follows 5-10 random users
+    // Each user follows 10-25 random users (5x density scaling)
     const targets = users.filter((u) => u.id !== follower.id);
-    const count = 5 + Math.floor(Math.random() * 6);
+    const count = 10 + Math.floor(Math.random() * 16);
     const shuffled = targets.sort(() => 0.5 - Math.random()).slice(0, count);
 
     for (const target of shuffled) {
@@ -168,7 +191,7 @@ async function main() {
       description: 'Discuss Next.js, React, Tailwind, and frontend architectures.',
       ownerId: users[1].id,
       members: {
-        create: users.slice(1, 15).map((u, i) => ({
+        create: users.slice(1, 60).map((u, i) => ({
           userId: u.id,
           role: i === 0 ? 'OWNER' : 'MEMBER',
         })),
@@ -182,7 +205,7 @@ async function main() {
       description: 'Generative AI models, agent workflows, and LLM orchestration tools.',
       ownerId: users[2].id,
       members: {
-        create: users.slice(2, 20).map((u, i) => ({
+        create: users.slice(2, 70).map((u, i) => ({
           userId: u.id,
           role: i === 0 ? 'OWNER' : 'MEMBER',
         })),
@@ -193,8 +216,8 @@ async function main() {
 
   // 5. Create Posts
   const posts: any[] = [];
-  // Generate random posts
-  for (let i = 0; i < 60; i++) {
+  // Generate random posts (5x scaling -> 300 posts)
+  for (let i = 0; i < 300; i++) {
     const author = users[Math.floor(Math.random() * users.length)];
     const content = POST_TEMPLATES[i % POST_TEMPLATES.length] + ` (#${i + 1})`;
     const isWeb = i % 3 === 0;
@@ -226,7 +249,8 @@ async function main() {
 
   // 6. Create Comments & Replies
   const comments: any[] = [];
-  for (let i = 0; i < 80; i++) {
+  // 5x scaling -> 400 comments
+  for (let i = 0; i < 400; i++) {
     const post = posts[Math.floor(Math.random() * posts.length)];
     const user = users[Math.floor(Math.random() * users.length)];
     const content = COMMENT_TEMPLATES[i % COMMENT_TEMPLATES.length];
@@ -243,8 +267,8 @@ async function main() {
     comments.push(comment);
   }
 
-  // Create some nested replies
-  for (let i = 0; i < 30; i++) {
+  // Create some nested replies (5x scaling -> 150 replies)
+  for (let i = 0; i < 150; i++) {
     const parent = comments[Math.floor(Math.random() * comments.length)];
     const user = users[Math.floor(Math.random() * users.length)];
     const content = 'Agreed! ' + COMMENT_TEMPLATES[i % COMMENT_TEMPLATES.length];
@@ -267,8 +291,8 @@ async function main() {
   const bookmarkRecords: { userId: string; postId: string }[] = [];
 
   for (const user of users) {
-    // Each user likes 8-15 random posts
-    const count = 8 + Math.floor(Math.random() * 8);
+    // Each user likes 25-50 random posts (5x scaling)
+    const count = 25 + Math.floor(Math.random() * 26);
     const shuffled = posts.sort(() => 0.5 - Math.random()).slice(0, count);
 
     for (const post of shuffled) {
@@ -278,8 +302,8 @@ async function main() {
       });
     }
 
-    // Bookmark 2-5 posts
-    const bookmarkCount = 2 + Math.floor(Math.random() * 4);
+    // Bookmark 10-20 posts (5x scaling)
+    const bookmarkCount = 10 + Math.floor(Math.random() * 11);
     const bookmarkedShuffled = posts.sort(() => 0.5 - Math.random()).slice(0, bookmarkCount);
     for (const post of bookmarkedShuffled) {
       bookmarkRecords.push({

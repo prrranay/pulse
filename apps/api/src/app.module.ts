@@ -34,6 +34,7 @@ import { RateLimiterGuard } from './common/guards/rate-limiter.guard';
     // ── Configuration ────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env', '../../.env'],
       load: [
         appConfig,
         databaseConfig,

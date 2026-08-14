@@ -72,37 +72,54 @@ export class AdminService {
     };
   }
 
-  async listUsers(search?: string) {
+  async listUsers(search?: string, page: number = 1, limit: number = 10) {
     const query = search?.trim();
+    const skip = (page - 1) * limit;
 
-    return this.prisma.user.findMany({
-      where: query
-        ? {
-            OR: [
-              { username: { contains: query, mode: 'insensitive' } },
-              { displayName: { contains: query, mode: 'insensitive' } },
-              { email: { contains: query, mode: 'insensitive' } },
-            ],
-          }
-        : undefined,
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        email: true,
-        role: true,
-        isSuspended: true,
-        createdAt: true,
-        _count: {
-          select: {
-            posts: true,
-            comments: true,
+    const where = query
+      ? {
+          OR: [
+            { username: { contains: query, mode: 'insensitive' as const } },
+            { displayName: { contains: query, mode: 'insensitive' as const } },
+            { email: { contains: query, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
+    const [total, data] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          email: true,
+          role: true,
+          isSuspended: true,
+          createdAt: true,
+          _count: {
+            select: {
+              posts: true,
+              comments: true,
+            },
           },
         },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      users: data,
+      meta: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
       },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
+    };
   }
 
   async suspendUser(id: string) {

@@ -1,14 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../lib/api-client';
 import { ApiResponse, AdminUserListItem } from '../../../types';
 import { Search, Ban, CheckCircle, RefreshCw, UserCheck } from 'lucide-react';
+import ConfirmModal from '../../../components/confirm-modal';
 
 export default function AdminUsersPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [searchVal, setSearchVal] = useState('');
+  const [page, setPage] = useState(1);
+
+  // Reset page to 1 when search value changes
+  useEffect(() => {
+    setPage(1);
+  }, [searchVal]);
 
   // 1. Fetch Users
   const {
@@ -16,13 +25,32 @@ export default function AdminUsersPage() {
     isLoading,
     isRefetching,
     refetch,
-  } = useQuery<ApiResponse<AdminUserListItem[]>>({
-    queryKey: ['admin-users', searchVal],
+  } = useQuery<ApiResponse<{
+    users: AdminUserListItem[];
+    meta: {
+      total: number;
+      page: number;
+      limit: number;
+      pages: number;
+    };
+  }>>({
+    queryKey: ['admin-users', searchVal, page],
     queryFn: () =>
-      apiClient.get<ApiResponse<AdminUserListItem[]>>(`/admin/users?search=${searchVal}`),
+      apiClient.get<ApiResponse<{
+        users: AdminUserListItem[];
+        meta: {
+          total: number;
+          page: number;
+          limit: number;
+          pages: number;
+        };
+      }>>(`/admin/users?search=${searchVal}&page=${page}&limit=10`),
   });
 
-  const users = usersRes?.data ?? [];
+  const { users = [], meta } = usersRes?.data ?? {};
+  const [error, setError] = useState<string | null>(null);
+  const [showSuspendConfirm, setShowSuspendConfirm] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<AdminUserListItem | null>(null);
 
   // 2. Suspend User Mutation
   const suspendMutation = useMutation({
@@ -46,15 +74,14 @@ export default function AdminUsersPage() {
 
   const handleSuspendToggle = (user: AdminUserListItem) => {
     if (user.role === 'ADMIN') {
-      alert('Administrators cannot be suspended.');
+      setError('Administrators cannot be suspended.');
       return;
     }
     if (user.isSuspended) {
       unsuspendMutation.mutate(user.id);
     } else {
-      if (confirm(`Are you sure you want to suspend @${user.username}?`)) {
-        suspendMutation.mutate(user.id);
-      }
+      setSelectedUser(user);
+      setShowSuspendConfirm(true);
     }
   };
 
@@ -80,6 +107,19 @@ export default function AdminUsersPage() {
           Refresh
         </button>
       </div>
+
+      {error && (
+        <div className="flex items-center justify-between rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400 max-w-md">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="text-red-400 hover:text-red-300 font-bold ml-2 text-sm"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Search Input */}
       <div className="relative max-w-md">
@@ -125,7 +165,8 @@ export default function AdminUsersPage() {
                 {users.map((item) => (
                   <tr
                     key={item.id}
-                    className="hover:bg-slate-900/10 transition-all"
+                    className="hover:bg-slate-900/20 transition-all cursor-pointer"
+                    onClick={() => router.push(`/${item.username}`)}
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -160,7 +201,10 @@ export default function AdminUsersPage() {
                     <td className="px-6 py-4 text-right">
                       {item.role !== 'ADMIN' && (
                         <button
-                          onClick={() => handleSuspendToggle(item)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSuspendToggle(item);
+                          }}
                           disabled={suspendMutation.isPending || unsuspendMutation.isPending}
                           className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[10px] font-bold transition-all shadow-sm ${
                             item.isSuspended
@@ -185,8 +229,57 @@ export default function AdminUsersPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {meta && meta.pages > 1 && (
+            <div className="flex items-center justify-between border-t border-slate-900 px-6 py-4 text-xs bg-slate-900/5">
+              <p className="text-slate-500">
+                Showing Page <span className="font-semibold text-slate-350">{meta.page}</span> of{' '}
+                <span className="font-semibold text-slate-350">{meta.pages}</span> (Total{' '}
+                <span className="font-semibold text-slate-350">{meta.total}</span> users)
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPage((p) => Math.max(1, p - 1));
+                  }}
+                  disabled={meta.page <= 1}
+                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 font-semibold text-slate-400 hover:bg-slate-850 hover:text-slate-200 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPage((p) => Math.min(meta.pages, p + 1));
+                  }}
+                  disabled={meta.page >= meta.pages}
+                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 font-semibold text-slate-400 hover:bg-slate-850 hover:text-slate-200 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={showSuspendConfirm}
+        title="Suspend User"
+        message={`Are you sure you want to suspend @${selectedUser?.username}? They will lose access to the platform.`}
+        confirmText="Suspend"
+        isDanger={true}
+        onConfirm={() => {
+          setShowSuspendConfirm(false);
+          if (selectedUser) suspendMutation.mutate(selectedUser.id);
+        }}
+        onCancel={() => {
+          setShowSuspendConfirm(false);
+          setSelectedUser(null);
+        }}
+      />
     </div>
   );
 }

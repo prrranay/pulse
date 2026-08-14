@@ -129,9 +129,19 @@ flowchart LR
 
 ## 19. Deployment
 - **Frontend**: Automatically deployed to **Vercel** via GitHub Actions on pushes to the `main` branch.
+  - **Frontend Deploy URL**: [https://pulse-web-dev.vercel.app/](https://pulse-web-dev.vercel.app/)
 - **Backend**: Hosted on **Railway** as a persistent Node process.
 - **Database / Cache**: Uses managed PostgreSQL and managed Redis services on Railway.
 - **Database Migrations**: Applied during backend deployment using `npx prisma migrate deploy`.
+
+### Default Demo Credentials
+For testing local or production builds, use the following seeded accounts:
+- **Administrator**:
+  - **Email**: `admin@pulse.dev` (or Username: `admin`)
+  - **Password**: `Password123!`
+- **Developer (Standard User)**:
+  - **Email**: `rauchg@pulse.dev` (or Username: `rauchg` / `yyx990803`)
+  - **Password**: `Password123!`
 
 ## 20. Environment Variables
 

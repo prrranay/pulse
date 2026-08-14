@@ -11,8 +11,16 @@ import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RateLimit } from '../common/decorators/rate-limit.decorator';
 
+import { IsString, IsNotEmpty, IsIn } from 'class-validator';
+
 class RefineTextDto {
+  @IsString()
+  @IsNotEmpty()
   text!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(['improve', 'concise', 'professional', 'engaging'])
   tone!: 'improve' | 'concise' | 'professional' | 'engaging';
 }
 
