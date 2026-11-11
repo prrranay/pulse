@@ -1,6 +1,7 @@
 # Pulse — Developer Social Platform
 
 Pulse is a high-performance, production-oriented developer social platform built to demonstrate advanced system architecture, real-time communications, scalable caching paradigms, and asynchronous background jobs.
+
 ---
 
 ## 1. Product Overview
