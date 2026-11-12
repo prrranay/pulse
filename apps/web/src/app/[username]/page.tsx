@@ -89,12 +89,18 @@ export default function ProfilePage() {
     enabled: !!profile?.id && activeTab === 'following',
   });
 
+  const pendingFollowsRef = useRef(0);
+
   // 4. Follow Mutation
   const followMutation = useMutation({
     mutationFn: ({ userId, shouldFollow }: { userId: string; shouldFollow: boolean }) =>
       shouldFollow
         ? apiClient.post<ApiResponse<{ message: string }>>(`/users/${userId}/follow`)
         : apiClient.delete<ApiResponse<{ message: string }>>(`/users/${userId}/follow`),
+    onMutate: async () => {
+      pendingFollowsRef.current += 1;
+      await queryClient.cancelQueries({ queryKey: ['profile', username] });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile', username] });
       if (profile?.id) {
@@ -106,14 +112,17 @@ export default function ProfilePage() {
       setLocalIsFollowing(profile?.isFollowing);
       setLocalFollowersCount(profile?.followersCount);
     },
+    onSettled: () => {
+      pendingFollowsRef.current = Math.max(0, pendingFollowsRef.current - 1);
+    },
   });
 
   useEffect(() => {
-    if (profile && !followMutation.isPending) {
+    if (profile && pendingFollowsRef.current === 0) {
       setLocalIsFollowing(profile.isFollowing);
       setLocalFollowersCount(profile.followersCount);
     }
-  }, [profile, followMutation.isPending]);
+  }, [profile]);
 
   // 5.5 Start Chat Mutation
   const startChatMutation = useMutation({

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../hooks/auth-context';
 import { apiClient } from '../lib/api-client';
@@ -43,16 +43,31 @@ export default function PostCard({ post }: { post: PostResponse }) {
 
 
 
+  const postFeedQueryKeys = [
+    ['feed'],
+    ['post', post.id],
+    ['user-posts'],
+    ['user-reposts'],
+    ['user-bookmarks'],
+    ['community-posts'],
+    ['explore'],
+    ['search'],
+  ] as const;
+
+  const cancelAllPostFeeds = () =>
+    Promise.all(postFeedQueryKeys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+
   const invalidateAllPostFeeds = () => {
-    queryClient.invalidateQueries({ queryKey: ['feed'] });
-    queryClient.invalidateQueries({ queryKey: ['post', post.id] });
-    queryClient.invalidateQueries({ queryKey: ['user-posts'] });
-    queryClient.invalidateQueries({ queryKey: ['user-reposts'] });
-    queryClient.invalidateQueries({ queryKey: ['user-bookmarks'] });
-    queryClient.invalidateQueries({ queryKey: ['community-posts'] });
-    queryClient.invalidateQueries({ queryKey: ['explore'] });
-    queryClient.invalidateQueries({ queryKey: ['search'] });
+    postFeedQueryKeys.forEach((queryKey) => {
+      queryClient.invalidateQueries({ queryKey });
+    });
   };
+
+  // Track in-flight mutations via refs so settling a mutation doesn't revert optimistic state
+  // before invalidated feed queries finish refetching.
+  const pendingLikesRef = useRef(0);
+  const pendingBookmarksRef = useRef(0);
+  const pendingRepostsRef = useRef(0);
 
   // 1. Like mutation
   const likeMutation = useMutation({
@@ -60,12 +75,19 @@ export default function PostCard({ post }: { post: PostResponse }) {
       shouldLike
         ? apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/like`)
         : apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/like`),
+    onMutate: async () => {
+      pendingLikesRef.current += 1;
+      await cancelAllPostFeeds();
+    },
     onSuccess: () => {
       invalidateAllPostFeeds();
     },
     onError: () => {
       setLocalIsLiked(post.isLiked);
       setLocalLikesCount(post.likesCount);
+    },
+    onSettled: () => {
+      pendingLikesRef.current = Math.max(0, pendingLikesRef.current - 1);
     },
   });
 
@@ -75,11 +97,18 @@ export default function PostCard({ post }: { post: PostResponse }) {
       shouldBookmark
         ? apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/bookmark`)
         : apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/bookmark`),
+    onMutate: async () => {
+      pendingBookmarksRef.current += 1;
+      await cancelAllPostFeeds();
+    },
     onSuccess: () => {
       invalidateAllPostFeeds();
     },
     onError: () => {
       setLocalIsBookmarked(post.isBookmarked);
+    },
+    onSettled: () => {
+      pendingBookmarksRef.current = Math.max(0, pendingBookmarksRef.current - 1);
     },
   });
 
@@ -89,6 +118,10 @@ export default function PostCard({ post }: { post: PostResponse }) {
       shouldRepost
         ? apiClient.post<ApiResponse<unknown>>(`/posts/${post.id}/repost`)
         : apiClient.delete<ApiResponse<unknown>>(`/posts/${post.id}/repost`),
+    onMutate: async () => {
+      pendingRepostsRef.current += 1;
+      await cancelAllPostFeeds();
+    },
     onSuccess: () => {
       invalidateAllPostFeeds();
     },
@@ -96,27 +129,30 @@ export default function PostCard({ post }: { post: PostResponse }) {
       setLocalIsReposted(post.isReposted);
       setLocalRepostsCount(post.repostsCount);
     },
+    onSettled: () => {
+      pendingRepostsRef.current = Math.max(0, pendingRepostsRef.current - 1);
+    },
   });
 
   useEffect(() => {
-    if (!likeMutation.isPending) {
+    if (pendingLikesRef.current === 0) {
       setLocalIsLiked(post.isLiked);
       setLocalLikesCount(post.likesCount);
     }
-  }, [post.isLiked, post.likesCount, likeMutation.isPending]);
+  }, [post.isLiked, post.likesCount]);
 
   useEffect(() => {
-    if (!bookmarkMutation.isPending) {
+    if (pendingBookmarksRef.current === 0) {
       setLocalIsBookmarked(post.isBookmarked);
     }
-  }, [post.isBookmarked, bookmarkMutation.isPending]);
+  }, [post.isBookmarked]);
 
   useEffect(() => {
-    if (!repostMutation.isPending) {
+    if (pendingRepostsRef.current === 0) {
       setLocalIsReposted(post.isReposted);
       setLocalRepostsCount(post.repostsCount);
     }
-  }, [post.isReposted, post.repostsCount, repostMutation.isPending]);
+  }, [post.isReposted, post.repostsCount]);
 
   // 4. Delete post mutation
   const deletePostMutation = useMutation({

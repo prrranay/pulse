@@ -350,6 +350,15 @@ function ChatPageContent() {
   };
 
   const activeConversation = conversations.find((c) => c.id === activeConvId);
+  const isOtherTyping = activeConversation
+    ? !!typingUsers[activeConversation.otherParticipant.id]
+    : false;
+
+  useEffect(() => {
+    if (isOtherTyping && !isFetchingNextMessages) {
+      scrollToBottom();
+    }
+  }, [isOtherTyping, isFetchingNextMessages]);
 
   if (authLoading || !currentUser) {
     return (
@@ -493,9 +502,6 @@ function ChatPageContent() {
                         {activeConversation.otherParticipant.displayName ||
                           activeConversation.otherParticipant.username}
                       </h3>
-                      {typingUsers[activeConversation.otherParticipant.id] && (
-                        <span className="text-[9px] text-indigo-400 font-medium animate-pulse">typing...</span>
-                      )}
                     </div>
                     <p className="text-[9px] text-slate-500">
                       @{activeConversation.otherParticipant.username}
@@ -527,7 +533,7 @@ function ChatPageContent() {
                   <div className="flex h-full items-center justify-center text-slate-500">
                     <Loader2 className="h-6 w-6 animate-spin" />
                   </div>
-                ) : messages.length === 0 ? (
+                ) : messages.length === 0 && !isOtherTyping ? (
                   <div className="flex h-full flex-col items-center justify-center text-center p-6 text-slate-500 space-y-1.5">
                     <Sparkles className="h-6 w-6 text-indigo-400" />
                     <p className="text-xs font-semibold text-slate-300">Start of conversation</p>
@@ -568,6 +574,8 @@ function ChatPageContent() {
                                 <span>
                                   {msg.readAt ? (
                                     <CheckCheck className="h-3 w-3 text-emerald-400 inline" />
+                                  ) : activeConversation.otherParticipant.isOnline ? (
+                                    <CheckCheck className="h-3 w-3 text-slate-400 inline" />
                                   ) : (
                                     <Check className="h-3 w-3 text-slate-600 inline" />
                                   )}
@@ -578,6 +586,15 @@ function ChatPageContent() {
                         </div>
                       );
                     })}
+                    {isOtherTyping && (
+                      <div className="flex justify-start">
+                        <div className="rounded-2xl rounded-bl-none bg-slate-900 px-4 py-3 shadow-md flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
+                        </div>
+                      </div>
+                    )}
                     <div ref={messagesEndRef} />
                   </div>
                 )}
